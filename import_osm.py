@@ -8,6 +8,7 @@ AREA_TAGS = ('area','natural','landuse','leisure')
 RAILWAY_TAG = 'railway'
 LANE_WIDTH = 3
 DEFAULT_BUILDING_HEIGHT = 10
+UNIT_SCALES = {'m':1,'ft':0.305}
 
 EQUATOR_RADIUS = 6378137        # greatest earth radius (equator)
 POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
@@ -44,6 +45,17 @@ def deselectObjects():
 
 def update():
     bpy.context.scene.update()
+
+def getMeters(value):
+    parts = value.partition(' ')
+    if len(parts)>1:
+        size = float(parts[0])
+        unit = parts[1]
+        if unit in UNIT_SCALES:
+            size=size*UNIT_SCALES[unit]
+    else:
+        size = float(parts[0])
+    return size
 
 class OSM():
     xml = None
@@ -172,7 +184,7 @@ class Way():
             self.type[0] = 'building'
             self.type[1] = self.tags[BUILDING_TAG].value
             if 'height' in self.tags:
-                self.height = float(self.tags['height'].value)
+                self.height = getMeters(self.tags['height'].value)
             else:
                 self.height = DEFAULT_BUILDING_HEIGHT
 
@@ -236,7 +248,7 @@ class Way():
         bpy.ops.mesh.fill()
         bpy.ops.mesh.extrude_region_move()
         bpy.ops.transform.transform(value=[0.0,0.0,self.height,0.0])
-        bpy.ops.mesh.remove_doubles()
+        #bpy.ops.mesh.remove_doubles()
         bpy.ops.mesh.normals_make_consistent()
         deselectMesh()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
@@ -248,7 +260,7 @@ class Way():
         selectObject(self.object)
         selectMesh()
         bpy.ops.mesh.fill()
-        bpy.ops.mesh.remove_doubles()
+        #bpy.ops.mesh.remove_doubles()
         bpy.ops.mesh.normals_make_consistent()
         deselectMesh()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
@@ -260,7 +272,7 @@ class Way():
         selectObject(self.object)
         selectMesh()
         # TODO: extrude edges to left and right by self.width/2
-        bpy.ops.mesh.remove_doubles()
+        #bpy.ops.mesh.remove_doubles()
         bpy.ops.mesh.normals_make_consistent()
         deselectMesh()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
