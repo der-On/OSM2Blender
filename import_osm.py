@@ -6,15 +6,14 @@ from xml.dom.minidom import parse,parseString
 from .helpers import Debugger,Profiler
 
 BUILDING_TAG = 'building'
-STREET_TAG = 'highway'
+ROAD_TAG = 'highway'
 AREA_TAGS = ('area','natural','landuse','leisure')
 RAILWAY_TAG = 'railway'
 LANE_WIDTH = 3.5
 DEFAULT_BUILDING_HEIGHT = 15
 UNIT_SCALES = {'m':1,'ft':0.305}
 OFFSET_STEP = 0.01
-OFFSET_ORDER = ['natural','landuse','leisure','street','railway','land','sand','beach','grassland','grass','coastline','water']
-LAYERS = ['building','area','street',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
+LAYERS = ['building','area','road',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
 
 EQUATOR_RADIUS = 6378137        # greatest earth radius (equator)
 POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
@@ -166,29 +165,31 @@ def getMeters(value):
 class OSM():
     xml = None
     nodes = {}
-    ways = {}
+    ways = {'areas':[],'buildings':[],'roads':[],'by_id':{}}
     relations = {}
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     dimensions = Vector((0.0,0.0))
     version = ''
     generator = ''
-    generate_process = 0.0
+    process = 0.0
+    process_step = 0.0
     ground = None
     camera = None
-    sub_offsets = {}
+    offset = 0.0
 
     def __init__(self,xml):
         self.nodes = {}
-        self.ways = {}
+        self.ways = {'areas':[],'buildings':[],'roads':[]}
         self.relations = {}
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.dimensions = Vector((0.0,0.0))
         self.version = ''
         self.generator = ''
-        self.generate_process = 0.0
+        self.process = 0.0
+        self.process_step = 0.0
         self.ground = None
         self.camera = None
-        self.sub_offsets = {}
+        self.offset = 0.0
 
         self.xml = xml
         self.version = xml.attributes['version'].value
@@ -204,7 +205,7 @@ class OSM():
         co = self.getCoordinates(latLon,False)
         self.bounds[1][0] = co[0]
         self.bounds[1][1] = co[1]
-
+        
         self.dimensions[0] = self.bounds[1][0]-self.bounds[0][0]
         self.dimensions[1] = self.bounds[1][1]-self.bounds[0][1]
 
@@ -219,15 +220,19 @@ class OSM():
 
         self.createGround()
         self.createCamera()
-
-        process_step = 100/len(self.ways)
         
-        for id in self.ways:
-            self.ways[id].generate()
-            if self.ways[id].object:
-                self.setOffset(self.ways[id])
-                self.setLayer(self.ways[id])
-            self.generate_process+=process_step
+        self.process_step = 100/len(self.ways['by_id'])
+
+        # generate all ways
+        for id in self.ways['by_id']:
+            way = self.ways['by_id'][id]
+            way.generate()
+            if way.object:
+                self.setLayer(way)
+            self.process+=self.process_step
+        
+        self.sortAreas()
+        self.sortRoads()
 
         update()
 
@@ -235,6 +240,43 @@ class OSM():
             debugger.debug("OSM import complete!")
         if profile:
             profiler.end('OSM.generate')
+
+    def sortAreas(self):
+        if profile:
+            profiler.start("OSM.sortAreas")
+
+        if debug:
+            debugger.debug('Z-sorting areas ...' )
+
+        way_offset = 0.0
+        max_offset = self.offset
+        for way in self.ways['areas']:
+            if way.object:
+                way_offset = self.sortWayByAreaSize(way)
+                if max_offset<way_offset:
+                    max_offset = way_offset
+
+        self.offset = max_offset
+
+        if profile:
+            profiler.end("OSM.sortAreas")
+
+    def sortRoads(self):
+        if profile:
+            profiler.start("OSM.sortRoads")
+
+        if debug:
+            debugger.debug('Z-sorting roads ...' )
+
+        max_offset = self.offset+OFFSET_STEP
+        for way in self.ways['roads']:
+            if way.object:
+                way.object.location[2] = max_offset
+
+        self.offset = max_offset
+
+        if profile:
+            profiler.end("OSM.sortRoads")
 
     def createGround(self):
         mesh = bpy.data.meshes.new("Ground")
@@ -256,6 +298,7 @@ class OSM():
         bpy.ops.uv.unwrap()
 
         deselectMesh()
+        self.ground.location[2] = -OFFSET_STEP
 
         # Material
         bpy.ops.object.material_slot_add()
@@ -306,16 +349,26 @@ class OSM():
         if debug:
             debugger.debug("parsing ways ...")
 
-        ways = {}
+        areas = []
+        buildings = []
+        roads = []
+        by_id = {}
+        
         xml_ways = xml.getElementsByTagName('way')
         for i in range(0,xml_ways.length):
             way = Way(xml_ways.item(i),self)
-            ways[way.id] = way
+            by_id[way.id] = way
+            if way.type[0]=='area':
+                areas.append(way)
+            elif way.type[0]=='building':
+                buildings.append(way)
+            elif way.type[0]=='road':
+                roads.append(way)
 
         if profile:
             profiler.end('OSM.getWays')
 
-        return ways
+        return {'areas':areas,'buildings':buildings,'roads':roads,'by_id':by_id}
 
     def getNodeRefs(self,xml):
         if profile:
@@ -377,13 +430,57 @@ class OSM():
 
         return co
 
-    def setOffset(self,way):
-        for i in range(0,len(OFFSET_ORDER)):
-            if OFFSET_ORDER[i]==way.type[0] or OFFSET_ORDER[i]==way.type[1] or OFFSET_ORDER[i]==way.type[2]:
-                way.object.location[2] = OFFSET_STEP*(i+1)
-                return
+    def sortWayByAreaSize(self,way):
+        if profile:
+            profiler.start("OSM.sortWayByAreaSize")
+
+        way_offset = 0.0
+        colliding = self.getCollidingWays(way,way.type[0]+'s')
+        if len(colliding)>0:
+            for i in range(0,len(colliding)):
+                way_offset = self.offset + (i*OFFSET_STEP)
+                colliding[i].object.location[2] = way_offset
+
+        if profile:
+            profiler.end("OSM.sortWayByAreaSize")
+
+        return way_offset
+
+
+    def getCollidingWays(self,way,type):
+        if profile:
+            profiler.start("OSM.getCollidingWays")
+
+        from operator import attrgetter
+        colliding = [way]
+        if type in self.ways:
+            for c_way in self.ways[type]:
+                if c_way.object and c_way!=way:
+                    if self.waysCollide(way,c_way):
+                        #if c_way.object.location[2] >= way.object.location[2]:
+                            colliding.append(c_way)
+
+        colliding.sort(key=attrgetter('area'),reverse=True)
+
+        if profile:
+            profiler.end("OSM.getCollidingWays")
+
+        return colliding
+
+    def waysCollide(self,way_a,way_b):
+        if profile:
+            profiler.start("OSM.waysCollide")
+
+        collide = (way_a.bounds[0][0] < way_b.bounds[1][0]) and (way_a.bounds[1][0] > way_b.bounds[0][0]) and (way_a.bounds[0][1] < way_b.bounds[1][1]) and (way_a.bounds[1][1] > way_b.bounds[0][1])
+
+        if profile:
+            profiler.end("OSM.waysCollide")
+        return collide
 
     def setLayer(self,way):
+        if profile:
+            profiler.start("OSM.setLayer")
+            
         for i in range(0,20):
             if way.type[0]==LAYERS[i]:
                 way.object.layers[i] = True
@@ -392,6 +489,9 @@ class OSM():
 
         if LAYERS[0]!=way.type:
             way.object.layers[0] = False
+
+        if profile:
+            profiler.end("OSM.setLayer")
 
 class Tag():
     name = None
@@ -414,12 +514,16 @@ class Way():
     width = 0
     object = None
     osm = None
+    area = 0.0
+    bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
 
     def __init__(self,xml,osm):
         self.osm = osm
         self.id = xml.attributes['id'].value
         self.tags = self.osm.getTags(xml)
         self.nodes = self.osm.getNodeRefs(xml)
+        self.area = 0.0
+        self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.setType()
         self.setName()
 
@@ -443,9 +547,9 @@ class Way():
                     self.type[1] = name
                     self.type[2] = self.tags[name].value
         
-        if STREET_TAG in self.tags:
-            self.type[0] = 'street'
-            self.type[1] = self.tags[STREET_TAG].value
+        if ROAD_TAG in self.tags:
+            self.type[0] = 'road'
+            self.type[1] = self.tags[ROAD_TAG].value
             if 'lanes' in self.tags:
                 self.width = LANE_WIDTH*float(self.tags['lanes'].value)
             else:
@@ -472,12 +576,18 @@ class Way():
             
         if self.type[0]:
             if debug:
-                debugger.debug('%3.2f' % (self.osm.generate_process) +'% ' + self.name)
+                debugger.debug('%3.2f' % (self.osm.process) +'% ' + self.name)
             self.createObject()
             selectObject(self.object)
             self.create()
             self.setMaterial()
             deselectObject(self.object)
+
+            self.area = self.object.dimensions[0]*self.object.dimensions[1]
+            self.bounds[0][0] = self.object.location[0]-(self.object.dimensions[0]/2)
+            self.bounds[1][0] = self.object.location[0]+(self.object.dimensions[0]/2)
+            self.bounds[0][1] = self.object.location[1]-(self.object.dimensions[1]/2)
+            self.bounds[1][1] = self.object.location[1]+(self.object.dimensions[1]/2)
 
         if profile:
             profiler.end('Way.generate')
@@ -490,7 +600,7 @@ class Way():
             self.createBuilding()
         elif self.type[0]=='area':
             self.createArea()
-        elif self.type[0]=='street':
+        elif self.type[0]=='road':
             self.createStreet()
 
         self.object.data.use_auto_smooth = True
