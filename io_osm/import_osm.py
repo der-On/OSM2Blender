@@ -13,7 +13,7 @@ LANE_WIDTH = 3.5
 DEFAULT_BUILDING_HEIGHT = 15
 UNIT_SCALES = {'m':1,'ft':0.305}
 OFFSET_STEP = 0.01
-LAYERS = ['building','area','road',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
+LAYERS = ['building','area','road','object',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
 
 EQUATOR_RADIUS = 6378137        # greatest earth radius (equator)
 POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
@@ -165,45 +165,63 @@ class OSM():
         self.scene = bpy.context.scene
 
         # create temporary scene
-        self.temp_scene = bpy.data.scenes.new("OSM_import")
+#        self.temp_scene = bpy.data.scenes.new("OSM_import")
         #bpy.context.scene.background_set = self.temp_scene
 
         self.nodes = self.getNodes(self.xml)
         self.ways = self.getWays(self.xml)
 
         deselectObjects(self.scene)
-
+        
         self.createGround()
         self.createCamera()
         
         self.process_step = 100/len(self.ways['by_id'])
 
         # generate all ways
+        self.createWays()
+
+        if debug:
+            debugger.debug('Creating objects ...')
+        # generate all node objects
+        self.createObjects()
+
+        self.sortAreas()
+        self.sortRoads()
+        
+        # move ways back to main scene
+#        for id in self.ways['by_id']:
+#            way = self.ways['by_id'][id]
+#            if way.object:
+#                self.scene.objects.link(way.object)
+
+#        bpy.data.scenes.remove(self.temp_scene)
+
+        update(self.scene)
+
+        if debug:
+            debugger.debug("OSM import complete!")
+
+    def createWays(self):
         for id in self.ways['by_id']:
             way = self.ways['by_id'][id]
             way.generate()
             if way.object:
                 self.setLayer(way)
                 # move to temp_scene for faster generation of next ways
-                self.scene.objects.unlink(way.object)
-                self.temp_scene.objects.link(way.object)
+#                self.scene.objects.unlink(way.object)
+#                self.temp_scene.objects.link(way.object)
             self.process+=self.process_step
-        
-        self.sortAreas()
-        self.sortRoads()
-        
-        # move ways back to main scene
-        for id in self.ways['by_id']:
-            way = self.ways['by_id'][id]
-            if way.object:
-                self.scene.objects.link(way.object)
 
-        bpy.data.scenes.remove(self.temp_scene)
-
-        update(self.scene)
-
-        if debug:
-            debugger.debug("OSM import complete!")
+    def createObjects(self):
+        for id in self.nodes:
+            node = self.nodes[id]
+            node.generate()
+            if node.object:
+                self.setLayer(node)
+                # move to temp_scene for faster generation of next ways
+#                self.scene.objects.unlink(node.object)
+#                self.temp_scene.objects.link(node.object)
 
     def sortAreas(self):
         if debug:
@@ -582,16 +600,51 @@ class Node():
     ele = 0.0
     co = Vector((0.0,0.0,0.0))
     tags = {}
+    type = None
     osm = None
+    object = None
+    name = None
 
     def __init__(self,xml,osm):
         self.osm = osm
         self.id = xml.attributes['id'].value
         self.lat = float(xml.attributes['lat'].value)
         self.lon = float(xml.attributes['lon'].value)
+        self.object = None
+        self.name = None
 
         if 'ele' in xml.attributes:
             self.ele = float(xml.attributes['ele'].value)
 
         self.co = self.osm.getCoordinates((self.lat,self.lon,self.ele))
         self.tags = self.osm.getTags(xml)
+        self.setType()
+        self.setName()
+
+    def setType(self):
+        self.type = [None,None,None]
+        if ROAD_TAG in self.tags:
+            self.type[0] = 'object'
+            self.type[1] = self.tags[ROAD_TAG].value
+
+    def setName(self):
+        if self.type[0] and self.type[1]:
+            self.name = self.type[1]+'_'+self.id
+
+    def generate(self):
+         if self.type[0]:
+            self.createObject()
+#            selectObject(self.object,self.osm.scene)
+            self.create()
+#            deselectObject(self.object)
+
+    def createObject(self):
+        self.object = bpy.data.objects.new(self.name,None)
+        self.osm.scene.objects.link(self.object)
+
+    def create(self):
+        self.object.location = self.co
+        if self.type[0]=='object' and self.type[1]:
+            if self.type[1] in bpy.data.groups:
+                self.object.dupli_type = 'GROUP'
+                self.object.dupli_group = bpy.data.groups[self.type[1]]
