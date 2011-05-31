@@ -177,14 +177,12 @@ class OSM():
         self.createCamera()
         
         self.process_step = 100/len(self.ways['by_id'])
+        
+        # generate all node objects
+        self.createObjects()
 
         # generate all ways
         self.createWays()
-
-        if debug:
-            debugger.debug('Creating objects ...')
-        # generate all node objects
-        self.createObjects()
 
         self.sortAreas()
         self.sortRoads()
@@ -214,6 +212,8 @@ class OSM():
             self.process+=self.process_step
 
     def createObjects(self):
+        if debug:
+            debugger.debug('Creating objects ...')
         for id in self.nodes:
             node = self.nodes[id]
             node.generate()
@@ -513,6 +513,8 @@ class Way():
         self.osm.scene.objects.link(self.object)
 
     def createEdges(self):
+        from mathutils import Euler
+        upvector = Vector((0.0,0.0,1.0))
         mesh = self.object.data
         mesh.vertices.add(len(self.nodes))
         for i in range(0,len(self.nodes)):
@@ -525,6 +527,30 @@ class Way():
                 mesh.edges[i].vertices[1] = i+1
             else:
                 mesh.edges[i].vertices[1] = i
+                
+            # check for referenced objects and align them with current edge on xy plane, means rotate on z-axis only
+            if self.nodes[i].object:
+                if i>0:
+                    start_v = mesh.vertices[i-1]
+                else:
+                    start_v = mesh.vertices[i]
+
+                if i<len(mesh.vertices)-1:
+                    end_v = mesh.vertices[i+1]
+                else:
+                    end_v = mesh.vertices[i]
+                    
+                normal = (start_v.co-end_v.co).normalized().cross(upvector)
+                rot = normal.to_track_quat('X','Z').to_euler()
+                self.nodes[i].object.rotation_euler = rot
+
+                # offset the object to the side so it sits next to a road
+                if self.width>0:
+                    offset = upvector.copy()
+                    rot = normal.to_track_quat('Z','X').to_euler()
+                    offset.rotate(rot)
+                    offset*=self.width/2
+                    self.nodes[i].object.location-=offset
 
     def createBuilding(self):
         self.createEdges()
