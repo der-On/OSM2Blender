@@ -3,7 +3,7 @@ import math
 from mathutils import geometry
 from mathutils import Vector
 from xml.dom.minidom import parse,parseString
-from .helpers import Debugger,Profiler
+from .helpers import Debugger
 
 BUILDING_TAG = 'building'
 ROAD_TAG = 'highway'
@@ -19,54 +19,46 @@ EQUATOR_RADIUS = 6378137        # greatest earth radius (equator)
 POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
 LATLON_SCALE = 3.33
 
-profile = True
+profiler = True
 debug = True
 log = False
 
-profiler = Profiler()
 debugger = Debugger()
 
 def load_osm(filepath, context):
     if debug:
         debugger.start(log)
-    if profile:
-        profiler.start("load_osm")
     if debug:
         debugger.debug("OSM import started: %r..." % filepath)
         debugger.debug("parsing xml to dom ...")
 
-    if profile:
-        profiler.start('xml.parse')
+    # deactive undo for better performance and less memory usage
+    global_undo = context.user_preferences.edit.use_global_undo
+    context.user_preferences.edit.use_global_undo = False
 
     xml = parse(filepath)
 
-    if profile:
-        profiler.end('xml.parse')
-
     root = xml.documentElement
     osm = OSM(root)
-    osm.generate()
+    if profiler:
+        import profile
+        import time
+        profile.runctx('osm.generate()',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
+    else:
+        osm.generate()
+        
     xml.unlink()
 
-    if profile:
-        profiler.end('load_osm')
-        if debug:
-            debugger.debug("\nProfiling results:")
-            debugger.debug(profiler.getTimes())
+    # reset undo preference
+    context.user_preferences.edit.use_global_undo = global_undo
 
 def load(operator, context, filepath=""):
     load_osm(filepath, context)
     return {'FINISHED'}
 
 def selectObject(obj):
-    if profile:
-        profiler.start('selectObject')
-
     obj.select = True
     bpy.context.scene.objects.active = obj #set the mesh object to current
-
-    if profile:
-        profiler.end('selectObject')
 
 def setOnLayer(obj,layer):
     for i in range(0,20):
@@ -84,70 +76,31 @@ def editMode(mode=True):
             bpy.ops.object.mode_set(mode='OBJECT') #Operators
 
 def selectMesh():
-    if profile:
-        profiler.start('selectMesh')
-
     if bpy.context.scene.objects.active:
         bpy.ops.object.mode_set(mode='EDIT') #Operators
         bpy.ops.mesh.select_all(action='SELECT')#select all the face/vertex/edge
 
-    if profile:
-        profiler.end('selectMesh')
-
 def selectCurve():
-    if profile:
-        profiler.start('selectCurve')
-
     if bpy.context.scene.objects.active:
         bpy.ops.object.mode_set(mode='EDIT') #Operators
         bpy.ops.curve.select_all(action='SELECT')#select all the face/vertex/edge
-
-    if profile:
-        profiler.end('selectCurve')
 
 def deselectCurve():
     deselectMesh()
 
 def deselectMesh():
-    if profile:
-        profiler.start('deselectMesh')
-
     bpy.ops.object.mode_set(mode='OBJECT') # set it in object
 
-    if profile:
-        profiler.end('deselectMesh')
-
 def deselectObjects():
-    if profile:
-        profiler.start('deselectObjects')
-
     for i in bpy.context.scene.objects: i.select = False #deselect all objects
 
-    if profile:
-        profiler.end('deselectObjects')
-
 def deselectObject(obj):
-    if profile:
-        profiler.start('deselectObject')
-
     obj.select = False
 
-    if profile:
-        profiler.end('deselectObject')
-
 def update():
-    if profile:
-        profiler.start('update')
-
     bpy.context.scene.update()
 
-    if profile:
-        profiler.end('update')
-
 def getMeters(value):
-    if profile:
-        profiler.start('getMeters')
-
     parts = value.partition(' ')
     if len(parts)>1:
         size = float(parts[0])
@@ -157,15 +110,12 @@ def getMeters(value):
     else:
         size = float(parts[0])
 
-    if profile:
-        profiler.end('getMeters')
-
     return size
 
 class OSM():
     xml = None
     nodes = {}
-    ways = {'areas':[],'buildings':[],'roads':[],'by_id':{}}
+    ways = {'areas':[],'buildings':[],'roads':[],'by_id':{},'sorted':[]}
     relations = {}
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     dimensions = Vector((0.0,0.0))
@@ -179,7 +129,7 @@ class OSM():
 
     def __init__(self,xml):
         self.nodes = {}
-        self.ways = {'areas':[],'buildings':[],'roads':[]}
+        self.ways = {'areas':[],'buildings':[],'roads':[],'by_id':{},'sorted':[]}
         self.relations = {}
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.dimensions = Vector((0.0,0.0))
@@ -210,9 +160,6 @@ class OSM():
         self.dimensions[1] = self.bounds[1][1]-self.bounds[0][1]
 
     def generate(self):
-        if profile:
-            profiler.start('OSM.generate')
-
         self.nodes = self.getNodes(self.xml)
         self.ways = self.getWays(self.xml)
 
@@ -238,13 +185,8 @@ class OSM():
 
         if debug:
             debugger.debug("OSM import complete!")
-        if profile:
-            profiler.end('OSM.generate')
 
     def sortAreas(self):
-        if profile:
-            profiler.start("OSM.sortAreas")
-
         if debug:
             debugger.debug('Z-sorting areas ...' )
 
@@ -252,19 +194,13 @@ class OSM():
         max_offset = self.offset
         for way in self.ways['areas']:
             if way.object:
-                way_offset = self.sortWayByAreaSize(way)
+                way_offset = self.sortCollidingWaysByAreaSize(way)
                 if max_offset<way_offset:
                     max_offset = way_offset
 
         self.offset = max_offset
 
-        if profile:
-            profiler.end("OSM.sortAreas")
-
     def sortRoads(self):
-        if profile:
-            profiler.start("OSM.sortRoads")
-
         if debug:
             debugger.debug('Z-sorting roads ...' )
 
@@ -274,9 +210,6 @@ class OSM():
                 way.object.location[2] = max_offset
 
         self.offset = max_offset
-
-        if profile:
-            profiler.end("OSM.sortRoads")
 
     def createGround(self):
         mesh = bpy.data.meshes.new("Ground")
@@ -327,8 +260,6 @@ class OSM():
         bpy.context.scene.camera = self.camera
 
     def getNodes(self,xml):
-        if profile:
-            profiler.start('OSM.getNodes')
         if debug:
             debugger.debug("parsing nodes ...")
 
@@ -338,14 +269,9 @@ class OSM():
             node = Node(xml_nodes.item(i),self)
             nodes[node.id] = node
 
-        if profile:
-            profiler.end('OSM.getNodes')
-
         return nodes
 
     def getWays(self,xml):
-        if profile:
-            profiler.start('OSM.getWays')
         if debug:
             debugger.debug("parsing ways ...")
 
@@ -365,15 +291,9 @@ class OSM():
             elif way.type[0]=='road':
                 roads.append(way)
 
-        if profile:
-            profiler.end('OSM.getWays')
+        return {'areas':areas,'buildings':buildings,'roads':roads,'by_id':by_id,'sorted':[]}
 
-        return {'areas':areas,'buildings':buildings,'roads':roads,'by_id':by_id}
-
-    def getNodeRefs(self,xml):
-        if profile:
-            profiler.start('OSM.getNodeRefs')
-            
+    def getNodeRefs(self,xml):            
         refs = []
         xml_nds = xml.getElementsByTagName('nd')
         for i in range(0,xml_nds.length):
@@ -382,30 +302,18 @@ class OSM():
                 node = self.nodes[id]
                 refs.append(node)
 
-        if profile:
-            profiler.end('OSM.getNodeRefs')
-
         return refs
 
     def getTags(self,xml):
-        if profile:
-            profiler.start('OSM.getTags')
-
         tags = {}
         xml_tags = xml.getElementsByTagName('tag')
         for i in range(0,xml_tags.length):
             tag = Tag(xml_tags.item(i),self)
             tags[tag.name] = tag
 
-        if profile:
-            profiler.end('OSM.getTags')
-
         return tags
 
     def getCoordinates(self,latLonEle,use_bounds = True):
-        if profile:
-            profiler.start('OSM.getCoordinates')
-
         from math import sqrt, cos, sin
         
         if len(latLonEle)==3:
@@ -425,32 +333,23 @@ class OSM():
             co[0]-=self.bounds[0][0]
             co[1]-=self.bounds[0][1]
 
-        if profile:
-            profiler.end('OSM.getCoordinates')
-
         return co
 
-    def sortWayByAreaSize(self,way):
-        if profile:
-            profiler.start("OSM.sortWayByAreaSize")
+    def sortCollidingWaysByAreaSize(self,way):
+        way_offset = self.offset
+        if way.id not in self.ways['sorted']:
+            colliding = self.getCollidingWays(way,way.type[0]+'s')
+            if len(colliding)>0:
+                for i in range(0,len(colliding)):
+                    way_offset = self.offset + (i*OFFSET_STEP)
+                    colliding[i].object.location[2] = way_offset
 
-        way_offset = 0.0
-        colliding = self.getCollidingWays(way,way.type[0]+'s')
-        if len(colliding)>0:
-            for i in range(0,len(colliding)):
-                way_offset = self.offset + (i*OFFSET_STEP)
-                colliding[i].object.location[2] = way_offset
-
-        if profile:
-            profiler.end("OSM.sortWayByAreaSize")
+                    # mark as sorted so it wont be sorted again
+                    self.ways['sorted'].append(colliding[i].id)
 
         return way_offset
 
-
     def getCollidingWays(self,way,type):
-        if profile:
-            profiler.start("OSM.getCollidingWays")
-
         from operator import attrgetter
         colliding = [way]
         if type in self.ways:
@@ -461,26 +360,13 @@ class OSM():
                             colliding.append(c_way)
 
         colliding.sort(key=attrgetter('area'),reverse=True)
-
-        if profile:
-            profiler.end("OSM.getCollidingWays")
-
         return colliding
 
     def waysCollide(self,way_a,way_b):
-        if profile:
-            profiler.start("OSM.waysCollide")
-
         collide = (way_a.bounds[0][0] < way_b.bounds[1][0]) and (way_a.bounds[1][0] > way_b.bounds[0][0]) and (way_a.bounds[0][1] < way_b.bounds[1][1]) and (way_a.bounds[1][1] > way_b.bounds[0][1])
-
-        if profile:
-            profiler.end("OSM.waysCollide")
         return collide
 
     def setLayer(self,way):
-        if profile:
-            profiler.start("OSM.setLayer")
-            
         for i in range(0,20):
             if way.type[0]==LAYERS[i]:
                 way.object.layers[i] = True
@@ -489,9 +375,7 @@ class OSM():
 
         if LAYERS[0]!=way.type:
             way.object.layers[0] = False
-
-        if profile:
-            profiler.end("OSM.setLayer")
+            
 
 class Tag():
     name = None
@@ -516,7 +400,7 @@ class Way():
     osm = None
     area = 0.0
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
-
+    
     def __init__(self,xml,osm):
         self.osm = osm
         self.id = xml.attributes['id'].value
@@ -528,9 +412,6 @@ class Way():
         self.setName()
 
     def setType(self):
-        if profile:
-            profiler.start('Way.setType')
-
         self.type = [None,None,None]
         if BUILDING_TAG in self.tags:
             self.type[0] = 'building'
@@ -554,26 +435,14 @@ class Way():
                 self.width = LANE_WIDTH*float(self.tags['lanes'].value)
             else:
                 self.width = LANE_WIDTH
-
-        if profile:
-            profiler.end('Way.setType')
     
-    def setName(self):
-        if profile:
-            profiler.start('Way.setName')
-            
+    def setName(self):     
         if 'name' in self.tags:
             self.name = self.tags['name'].value
         else:
             self.name = '%s_%s' % (self.type[0],self.id)
 
-        if profile:
-            profiler.end('Way.setName')
-
     def generate(self):
-        if profile:
-            profiler.start('Way.generate')
-            
         if self.type[0]:
             if debug:
                 debugger.debug('%3.2f' % (self.osm.process) +'% ' + self.name)
@@ -589,13 +458,7 @@ class Way():
             self.bounds[0][1] = self.object.location[1]-(self.object.dimensions[1]/2)
             self.bounds[1][1] = self.object.location[1]+(self.object.dimensions[1]/2)
 
-        if profile:
-            profiler.end('Way.generate')
-
     def create(self):
-        if profile:
-            profiler.start('Way.create')
-            
         if self.type[0]=='building':
             self.createBuilding()
         elif self.type[0]=='area':
@@ -607,25 +470,12 @@ class Way():
         #self.object.data.show_double_sided = False
         bpy.ops.object.shade_smooth()
 
-        if profile:
-            profiler.end('Way.create')
-
     def createObject(self):
-        if profile:
-            profiler.start('Way.createObject')
-
         mesh = bpy.data.meshes.new(self.name)
         self.object = bpy.data.objects.new(self.name,mesh)
         bpy.context.scene.objects.link(self.object)
 
-        if profile:
-            profiler.end('Way.createObject')
-
     def createEdges(self):
-        if profile:
-            profiler.start('Way.createEdges')
-
-        # add egdes
         mesh = self.object.data
         mesh.vertices.add(len(self.nodes))
         for i in range(0,len(self.nodes)):
@@ -639,74 +489,24 @@ class Way():
             else:
                 mesh.edges[i].vertices[1] = i
 
-        if profile:
-            profiler.end('Way.createEdges')
-
     def createBuilding(self):
-        if profile:
-            profiler.start('Way.createBuilding')
-
         self.createEdges()
         selectMesh()
-
-        if profile:
-            profiler.start('mesh.fill')
         bpy.ops.mesh.fill()
-        if profile:
-            profiler.end('mesh.fill')
-
-        if profile:
-            profiler.start('mesh.extrude')
         bpy.ops.mesh.extrude_region_move()
         bpy.ops.transform.transform(value=[0.0,0.0,self.height,0.0])
-        if profile:
-            profiler.end('mesh.extrude')
-
         selectMesh()
-
-        if profile:
-            profiler.start('remove_doubles')
         bpy.ops.mesh.remove_doubles()
-        if profile:
-            profiler.end('remove_doubles')
-            
-        if profile:
-            profiler.start('mesh.normals')
         bpy.ops.mesh.normals_make_consistent()
-        if profile:
-            profiler.end('mesh.normals')
-            
         deselectMesh()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
 
-        if profile:
-            profiler.end('Way.createBuilding')
-
     def createArea(self):
-        if profile:
-            profiler.start('Way.createArea')
-
         self.createEdges()
         selectMesh()
-        
-        if profile:
-            profiler.start('mesh.fill')
         bpy.ops.mesh.fill()
-        if profile:
-            profiler.end('mesh.fill')
-
-        if profile:
-            profiler.start('remove_doubles')
         bpy.ops.mesh.remove_doubles()
-        if profile:
-            profiler.end('remove_doubles')
-
-        if profile:
-            profiler.start('mesh.normals')
         bpy.ops.mesh.normals_make_consistent()
-        if profile:
-            profiler.end('mesh.normals')
-
 #        selectMesh()
 #
 #        if profile:
@@ -714,20 +514,12 @@ class Way():
 #        bpy.ops.uv.unwrap()
 #        if profile:
 #            profiler.end('mesh.unwrap')
-
         deselectMesh()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
 
-        if profile:
-            profiler.end('Way.createArea')
-
     def createStreet(self):
-        if profile:
-            profiler.start('Way.createStreet')
-
         self.createEdges()
         bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
-
         bpy.ops.object.convert(target="CURVE")
 
         # uv mapping
@@ -755,27 +547,11 @@ class Way():
 #        bpy.ops.mesh.subdivide(smoothness=1)
 #        deselectMesh()
         
-        if profile:
-            profiler.start('remove_doubles')
         bpy.ops.mesh.remove_doubles()
-        if profile:
-            profiler.end('remove_doubles')
-
-        if profile:
-            profiler.start('mesh.normals')
         bpy.ops.mesh.normals_make_consistent(inside=True)
-        if profile:
-            profiler.end('mesh.normals')
-
         deselectMesh()
-
-        if profile:
-            profiler.end('Way.createStreet')
         
     def setMaterial(self):
-        if profile:
-            profiler.start('Way.setMaterial')
-            
         bpy.ops.object.material_slot_add()
         if self.type[2] and (self.type[2] in bpy.data.materials):
             self.object.material_slots[0].material = bpy.data.materials[self.type[2]]
@@ -783,9 +559,7 @@ class Way():
             self.object.material_slots[0].material = bpy.data.materials[self.type[1]]
         elif self.type[0] and (self.type[0] in bpy.data.materials):
             self.object.material_slots[0].material = bpy.data.materials[self.type[0]]
-
-        if profile:
-            profiler.end('Way.setMaterial')
+            
 
 class Node():
     id = None
