@@ -3,7 +3,7 @@ import math
 from mathutils import geometry
 from mathutils import Vector
 from xml.dom.minidom import parse,parseString
-from .helpers import Debugger
+from io_osm.helpers import Debugger
 
 BUILDING_TAG = 'building'
 ROAD_TAG = 'highway'
