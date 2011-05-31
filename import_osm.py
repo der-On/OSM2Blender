@@ -535,18 +535,13 @@ class Way():
 #        deselectCurve()
 
         self.object.data.extrude = 0.00001
-
-        bpy.ops.object.modifier_add(type="SOLIDIFY")
-        solidify = self.object.modifiers[0]
+        solidify = self.object.modifiers.new(name="solidify",type="SOLIDIFY")
         solidify.thickness = self.width
         solidify.offset = 0
         
         bpy.ops.object.convert(target="MESH")
 
         selectMesh()
-#        bpy.ops.mesh.subdivide(smoothness=1)
-#        deselectMesh()
-        
         bpy.ops.mesh.remove_doubles()
         bpy.ops.mesh.normals_make_consistent(inside=True)
         deselectMesh()
