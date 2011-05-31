@@ -56,9 +56,9 @@ def load(operator, context, filepath=""):
     load_osm(filepath, context)
     return {'FINISHED'}
 
-def selectObject(obj):
+def selectObject(obj,scene):
     obj.select = True
-    bpy.context.scene.objects.active = obj #set the mesh object to current
+    scene.objects.active = obj #set the mesh object to current
 
 def setOnLayer(obj,layer):
     for i in range(0,20):
@@ -76,14 +76,12 @@ def editMode(mode=True):
             bpy.ops.object.mode_set(mode='OBJECT') #Operators
 
 def selectMesh():
-    if bpy.context.scene.objects.active:
-        bpy.ops.object.mode_set(mode='EDIT') #Operators
-        bpy.ops.mesh.select_all(action='SELECT')#select all the face/vertex/edge
+    bpy.ops.object.mode_set(mode='EDIT') #Operators
+    bpy.ops.mesh.select_all(action='SELECT')#select all the face/vertex/edge
 
 def selectCurve():
-    if bpy.context.scene.objects.active:
-        bpy.ops.object.mode_set(mode='EDIT') #Operators
-        bpy.ops.curve.select_all(action='SELECT')#select all the face/vertex/edge
+    bpy.ops.object.mode_set(mode='EDIT') #Operators
+    bpy.ops.curve.select_all(action='SELECT')#select all the face/vertex/edge
 
 def deselectCurve():
     deselectMesh()
@@ -91,14 +89,14 @@ def deselectCurve():
 def deselectMesh():
     bpy.ops.object.mode_set(mode='OBJECT') # set it in object
 
-def deselectObjects():
-    for i in bpy.context.scene.objects: i.select = False #deselect all objects
+def deselectObjects(scene):
+    for i in scene.objects: i.select = False #deselect all objects
 
 def deselectObject(obj):
     obj.select = False
 
-def update():
-    bpy.context.scene.update()
+def update(scene):
+    scene.update()
 
 def getMeters(value):
     parts = value.partition(' ')
@@ -126,6 +124,8 @@ class OSM():
     ground = None
     camera = None
     offset = 0.0
+    scene = None
+    temp_scene = None
 
     def __init__(self,xml):
         self.nodes = {}
@@ -140,6 +140,8 @@ class OSM():
         self.ground = None
         self.camera = None
         self.offset = 0.0
+        self.scene = None
+        self.temp_scene = None
 
         self.xml = xml
         self.version = xml.attributes['version'].value
@@ -160,10 +162,16 @@ class OSM():
         self.dimensions[1] = self.bounds[1][1]-self.bounds[0][1]
 
     def generate(self):
+        self.scene = bpy.context.scene
+
+        # create temporary scene
+        self.temp_scene = bpy.data.scenes.new("OSM_import")
+        #bpy.context.scene.background_set = self.temp_scene
+
         self.nodes = self.getNodes(self.xml)
         self.ways = self.getWays(self.xml)
 
-        deselectObjects()
+        deselectObjects(self.scene)
 
         self.createGround()
         self.createCamera()
@@ -176,12 +184,23 @@ class OSM():
             way.generate()
             if way.object:
                 self.setLayer(way)
+                # move to temp_scene for faster generation of next ways
+                self.scene.objects.unlink(way.object)
+                self.temp_scene.objects.link(way.object)
             self.process+=self.process_step
         
         self.sortAreas()
         self.sortRoads()
+        
+        # move ways back to main scene
+        for id in self.ways['by_id']:
+            way = self.ways['by_id'][id]
+            if way.object:
+                self.scene.objects.link(way.object)
 
-        update()
+        bpy.data.scenes.remove(self.temp_scene)
+
+        update(self.scene)
 
         if debug:
             debugger.debug("OSM import complete!")
@@ -214,7 +233,7 @@ class OSM():
     def createGround(self):
         mesh = bpy.data.meshes.new("Ground")
         self.ground = bpy.data.objects.new("Ground",mesh)
-        bpy.context.scene.objects.link(self.ground)
+        self.scene.objects.link(self.ground)
 
         setOnLayer(self.ground,0)
 
@@ -224,7 +243,7 @@ class OSM():
         mesh.vertices[2].co = Vector((self.dimensions[0],self.dimensions[1],0.0))
         mesh.vertices[3].co = Vector((0.0,self.dimensions[1],0.0))
         
-        selectObject(self.ground)
+        selectObject(self.ground,self.scene)
         selectMesh()
         
         bpy.ops.mesh.edge_face_add()
@@ -244,7 +263,7 @@ class OSM():
         angle = 60.0;
         cam = bpy.data.cameras.new("OSMCamera")
         self.camera = bpy.data.objects.new("OSMCamera",cam)
-        bpy.context.scene.objects.link(self.camera)
+        self.scene.objects.link(self.camera)
 
         setOnLayer(self.camera,0)
 
@@ -257,7 +276,7 @@ class OSM():
         self.camera.data.ortho_scale = self.dimensions[0]
         self.camera.location = Vector((self.dimensions[0]/2,self.dimensions[1]/(2+(90/angle)),100))
 
-        bpy.context.scene.camera = self.camera
+        self.scene.camera = self.camera
 
     def getNodes(self,xml):
         if debug:
@@ -447,7 +466,7 @@ class Way():
             if debug:
                 debugger.debug('%3.2f' % (self.osm.process) +'% ' + self.name)
             self.createObject()
-            selectObject(self.object)
+            selectObject(self.object,self.osm.scene)
             self.create()
             self.setMaterial()
             deselectObject(self.object)
@@ -473,7 +492,7 @@ class Way():
     def createObject(self):
         mesh = bpy.data.meshes.new(self.name)
         self.object = bpy.data.objects.new(self.name,mesh)
-        bpy.context.scene.objects.link(self.object)
+        self.osm.scene.objects.link(self.object)
 
     def createEdges(self):
         mesh = self.object.data
