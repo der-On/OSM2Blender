@@ -617,6 +617,17 @@ class Way():
             self.object.material_slots[0].material = bpy.data.materials[self.type[1]]
         elif self.type[0] and (self.type[0] in bpy.data.materials):
             self.object.material_slots[0].material = bpy.data.materials[self.type[0]]
+        else:
+            mat = None
+            if self.type[2]:
+                mat = bpy.data.materials.new(self.type[1])
+            elif self.type[1]:
+                mat = bpy.data.materials.new(self.type[2])
+            elif self.type[0]:
+                mat = bpy.data.materials.new(self.type[0])
+
+            if mat:
+                self.object.material_slots[0].material = mat
             
 
 class Node():
@@ -671,6 +682,9 @@ class Node():
     def create(self):
         self.object.location = self.co
         if self.type[0]=='object' and self.type[1]:
+            self.object.dupli_type = 'GROUP'
             if self.type[1] in bpy.data.groups:
-                self.object.dupli_type = 'GROUP'
                 self.object.dupli_group = bpy.data.groups[self.type[1]]
+            else:
+                group = bpy.data.groups.new(self.type[1])
+                self.object.dupli_group = group
