@@ -20,7 +20,7 @@ CYCLEWAY_WIDTH = 1.0
 RAILWAY_WIDTH = 1.5
 DEFAULT_BUILDING_HEIGHT = 15
 UNIT_SCALES = {'m':1,'ft':0.305}
-OFFSET_STEP = 0.001
+OFFSET_STEP = 0.01
 LAYERS = ['buildings','areas','roads','objects',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
 
 ROADS_SORT_ORDER = [None,'cycleway','railway']

@@ -54,7 +54,7 @@ class ImportOSM(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".osm"
     filter_glob = bpy.props.StringProperty(default="*.osm", options={'HIDDEN'})
-    
+
     def execute(self, context):
         from . import import_osm
         return import_osm.load(self, context, ** self.as_keywords(ignore=("filter_glob",)))
