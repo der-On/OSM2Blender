@@ -21,7 +21,7 @@ RAILWAY_WIDTH = 1.5
 DEFAULT_BUILDING_HEIGHT = 15
 UNIT_SCALES = {'m':1,'ft':0.305}
 OFFSET_STEP = 0.01
-LAYERS = ['buildings','areas','roads','objects',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
+LAYERS = ['building','area','road','object',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
 
 ROADS_SORT_ORDER = [None,'cycleway','railway']
 
@@ -215,7 +215,7 @@ class OSM():
         # set to layers
         for i in range(0,20):
             if LAYERS[i]:
-                if LAYERS[i]=='objects':
+                if LAYERS[i]=='object':
                     self.setToLayer(self.nodes,i,True)
                 elif LAYERS[i] in self.ways:
                     self.setToLayer(self.ways[LAYERS[i]],i)
@@ -779,9 +779,9 @@ class Way():
         else:
             mat = None
             if self.type[2]:
-                mat = bpy.data.materials.new(self.type[1])
-            elif self.type[1]:
                 mat = bpy.data.materials.new(self.type[2])
+            elif self.type[1]:
+                mat = bpy.data.materials.new(self.type[1])
             elif self.type[0]:
                 mat = bpy.data.materials.new(self.type[0])
 
