@@ -6,6 +6,7 @@ from xml.dom.minidom import parse,parseString
 from io_osm.helpers import Debugger
 
 # TODO: support levels and multilevels.
+# TODO: collision detection must be more precise, objects have to much offset.
 
 AEROWAY_TAG = 'aeroway' # TODO: add way support
 BUILDING_TAG = 'building'
@@ -20,7 +21,7 @@ CYCLEWAY_WIDTH = 1.0
 RAILWAY_WIDTH = 1.5
 DEFAULT_BUILDING_HEIGHT = 15
 UNIT_SCALES = {'m':1,'ft':0.305}
-OFFSET_STEP = 0.01
+OFFSET_STEP = 0.001
 LAYERS = ['building','area','road','object',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
 
 ROADS_SORT_ORDER = [None,'cycleway','railway']
