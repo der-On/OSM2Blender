@@ -1085,9 +1085,10 @@ class Node():
             self.osm.scene.objects.link(self.object)
         else:
             for object in self.osm.scene.objects:
-                if 'osm_id' in object and object['osm_id'] == self.id:
-                    self.object = object
-                    return
+                if object.dupli_type:
+                    if 'osm_id' in object and object['osm_id'] == self.id:
+                        self.object = object
+                        return
         
     def create(self,rebuild):
         self.object.location = self.co
