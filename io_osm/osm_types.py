@@ -623,16 +623,17 @@ class Way():
         if rebuild==False:
             mesh = bpy.data.meshes.new(self.name)
             self.object = bpy.data.objects.new(self.name,mesh)
-            self.object['osm_id'] = self.id
-            self.object['osm_name'] = self.name
-            self.object['osm_tags'] = {}
+            self.object.osm.id = self.id
+            self.object.osm.name = self.name
             for tag in self.tags:
-                self.object['osm_tags'][self.tags[tag].name] = self.tags[tag].value
+                obj_tag = self.object.osm.tags.add()
+                obj_tag.name = self.tags[tag].name
+                obj_tag.value = self.tags[tag].value
 
             self.osm.scene.objects.link(self.object)
         else:
             for object in self.osm.scene.objects:
-                if 'osm_id' in object and object['osm_id'] == self.id:
+                if object.osm.id == self.id:
                     self.object = object
                     return
 
@@ -1080,15 +1081,19 @@ class Node():
     def createObject(self,rebuild):
         if rebuild==False:
             self.object = bpy.data.objects.new(self.name,None)
-            self.object['osm_id'] = self.id
-            self.object['osm_types'] = str(self.type)
+            self.object.osm.id = self.id
+            self.object.osm.name = self.name
+            for tag in self.tags:
+                obj_tag = self.object.osm.tags.add()
+                obj_tag.name = self.tags[tag].name
+                obj_tag.value = self.tags[tag].value
+                
             self.osm.scene.objects.link(self.object)
         else:
             for object in self.osm.scene.objects:
-                if object.dupli_type:
-                    if 'osm_id' in object and object['osm_id'] == self.id:
-                        self.object = object
-                        return
+                if object.osm.id == self.id:
+                    self.object = object
+                    return
         
     def create(self,rebuild):
         self.object.location = self.co

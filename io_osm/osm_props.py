@@ -99,6 +99,10 @@ class OSM_Material(bpy.types.PropertyGroup):
                                     min=0.0,
                                     max=100.0)
 
+class OSM_Object(bpy.types.PropertyGroup):
+    id = bpy.props.StringProperty(name="ID")
+    name = bpy.props.StringProperty(name="Name")
+    tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
 
 class OSM_Group(bpy.types.PropertyGroup):
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
@@ -108,13 +112,16 @@ def register_props():
     bpy.utils.register_class(OSM_Scene)
     bpy.utils.register_class(OSM_Material)
     bpy.utils.register_class(OSM_Group)
+    bpy.utils.register_class(OSM_Object)
 
     bpy.types.Scene.osm = bpy.props.PointerProperty(name="OSM",type=OSM_Scene)
     bpy.types.Material.osm = bpy.props.PointerProperty(name="OSM",type=OSM_Material)
     bpy.types.Group.osm = bpy.props.PointerProperty(name="OSM",type=OSM_Group)
+    bpy.types.Object.osm = bpy.props.PointerProperty(name="OSM",type=OSM_Object)
 
 def unregister_props():
     bpy.utils.unregister_class(OSM_Tag)
     bpy.utils.unregister_class(OSM_Scene)
     bpy.utils.unregister_class(OSM_Material)
     bpy.utils.unregister_class(OSM_Group)
+    bpy.utils.unregister_class(OSM_Object)

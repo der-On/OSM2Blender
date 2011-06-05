@@ -119,23 +119,23 @@ class OBJECT_PT_OSM(bpy.types.Panel):
             return True
 
     def draw(self,context):
-        object = context.object
+        osm = context.object.osm
         layout = self.layout
 
-        if 'osm_id' in object:
+        if osm.id !='':
             row = layout.row()
-            row.label('ID: '+object['osm_id'])
+            row.label('ID: '+osm.id)
 
-        if 'osm_name' in object:
+        if osm.name!='':
             row = layout.row()
-            row.label('Name: '+object['osm_name'])
+            row.label('Name: '+osm.name)
 
-        if 'osm_tags' in object:
+        if len(osm.tags)>0:
             row = layout.row()
             row.label('Tags')
             box = layout.box()
-            for tag in object['osm_tags']:
-                box.label(tag+' = '+object['osm_tags'][tag])
+            for tag in osm.tags:
+                box.label(tag.name+' = '+tag.value)
 
 def tags_layout(layout,osm,group=None):
     row = layout.row()
