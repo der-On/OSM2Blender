@@ -35,10 +35,18 @@ bl_info = {
 if "bpy" in locals():
     import imp
     imp.reload(import_osm)
+    imp.reload(osm_ui)
+    imp.reload(osm_types)
+    imp.reload(osm_props)
+    imp.reload(osm_ops)
     
 else:
     import bpy
     from . import import_osm
+    from . import osm_ui
+    from . import osm_types
+    from . import osm_props
+    from . import osm_ops
 
 
 # TODO: on newer Blender builds io_utils seems to be in bpy_extras, on older ones bpy_extras does not exists. Should be removed with the official Blender release where bpy_extras is present.
@@ -56,7 +64,6 @@ class ImportOSM(bpy.types.Operator, ImportHelper):
     filter_glob = bpy.props.StringProperty(default="*.osm", options={'HIDDEN'})
 
     def execute(self, context):
-        from . import import_osm
         return import_osm.load(self, context, ** self.as_keywords(ignore=("filter_glob",)))
 	
 
@@ -72,6 +79,9 @@ def menu_func(self, context):
 # Function: register
 # Registers the addon with all its classes and the menu function.
 def register():
+    osm_props.register_props()
+    osm_ops.register_ops()
+    osm_ui.register_ui()
     bpy.utils.register_class(ImportOSM)
     bpy.types.INFO_MT_file_import.append(menu_func)
     #bpy.utils.register_module(__name__)
@@ -79,6 +89,9 @@ def register():
 # Function: unregister
 # Unregisters the addon and all its classes and removes the entry from the menu.
 def unregister():
+    osm_props.unregister_props()
+    osm_ops.unregister_ops()
+    osm_ui.unregister_ui()
     bpy.utils.unregister_class(ImportOSM)
     bpy.types.INFO_MT_file_import.remove(menu_func)
     #bpy.utils.unregister_module(__name__)
