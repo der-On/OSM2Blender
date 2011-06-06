@@ -37,7 +37,7 @@ class OSM():
     offset = 0.0
     scene = None
     temp_scene = None
-    tags = {}
+    config_tags = {}
 
     # config
     latlon_scale = 3.33
@@ -110,11 +110,11 @@ class OSM():
         for material in bpy.data.materials:
             for tag in material.osm.tags:
                 config_name = tag.name+'='+tag.value
-                if config_name in self.tags:
-                    tag_config = self.tags[config_name]
+                if config_name in self.config_tags:
+                    tag_config = self.config_tags[config_name]
                 else:
                     tag_config = TagConfig(tag.name,tag.value)
-                    self.tags[config_name] = tag_config
+                    self.config_tags[config_name] = tag_config
 
                 if material not in tag_config.materials:
                     tag_config.materials.append(material)
@@ -122,11 +122,11 @@ class OSM():
         for group in bpy.data.groups:
             for tag in group.osm.tags:
                 config_name = tag.name+'='+tag.value
-                if config_name in self.tags:
-                    tag_config = self.tags[config_name]
+                if config_name in self.config_tags:
+                    tag_config = self.config_tags[config_name]
                 else:
                     tag_config = TagConfig(tag.name,tag.value)
-                    self.tags[config_name] = tag_config
+                    self.config_tags[config_name] = tag_config
 
                 if group not in tag_config.groups:
                     tag_config.groups.append(group)
@@ -135,10 +135,10 @@ class OSM():
     def getTagConfig(self,name,value):
         full_name = name+'='+value
         undefined_name = name+'='
-        if full_name in self.tags:
-            return self.tags[full_name]
-        elif undefined_name in self.tags:
-            return self.tags[undefined_name]
+        if full_name in self.config_tags:
+            return self.config_tags[full_name]
+        elif undefined_name in self.config_tags:
+            return self.config_tags[undefined_name]
         return None
 
     def generate(self,rebuild):
@@ -500,7 +500,7 @@ class Way():
     nodes = []
     tags = {}
     type = None
-    height = 0
+    height = None
     width = 0
     lanes = 1
     levels = 0
@@ -520,7 +520,8 @@ class Way():
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.offset = 0.0
         self.level = 0
-        self.levels = 0
+        self.levels = None
+        self.height = None
         self.lanes = 1
         self.setLevel()
         self.setType()
@@ -543,7 +544,7 @@ class Way():
                 self.levels = self.height/self.osm.building_level_height
             else:
                 self.levels = self.osm.building_default_levels
-                self.height = self.levels*self.osm.building_level_height
+                #self.height = self.levels*self.osm.building_level_height
 
         if ROAD_TAG in self.tags:
             self.type[0] = 'road'
@@ -578,6 +579,25 @@ class Way():
             self.name = self.tags['name'].value
         else:
             self.name = '%s_%s' % (self.type[0],self.id)
+
+    def isClockwise(self):
+        pos = 0
+        neg = 0
+        num = len(self.nodes)-1
+        
+        for i in range(0,num):
+            v1 = Vector((self.nodes[(i-1) % num].co[0],self.nodes[(i-1) % num].co[1]))
+            v2 = Vector((self.nodes[i].co[0],self.nodes[i].co[1]))
+            v3 = Vector((self.nodes[(i+1) % num].co[0],self.nodes[(i+1) % num].co[1]))
+
+            cross = (v2[0]-v1[0])*(v3[1]-v2[1]) - (v2[1]-v1[1])*(v3[0]-v2[0])
+            
+            if cross>0:
+                pos+=1
+            if cross<0:
+                neg+=1
+        
+        return neg>=pos
 
     def generate(self,rebuild):
         if self.level>=0 and self.type[0]:
@@ -643,17 +663,24 @@ class Way():
         num = len(self.nodes)-1 # first and last are at the same location, so we do not need the last node
         v_num = num*2
         mesh = self.object.data
-
+        
         # update height from material level height
         material = self.object.material_slots[0].material
         if material:
-            self.height = self.levels*material.osm.building_level_height
+            if self.height==None: # no explicit height info in way
+                self.levels = material.osm.building_default_levels
+                self.height = self.levels*material.osm.building_level_height
 
         if rebuild==False:
             mesh.vertices.add(v_num)
             mesh.edges.add(num*3)
             mesh.faces.add(num)
 
+        # TODO: we have to reverse node order if direction is counter clockwise.
+        clockwise = self.isClockwise()
+        if clockwise:
+            self.nodes.reverse()
+            
         for i in range(0,num):
             # bottom
             if rebuild:
@@ -701,7 +728,7 @@ class Way():
                 v1 = fill_vecs[i][0]+num
                 v2 = fill_vecs[i][1]+num
                 v3 = fill_vecs[i][2]+num
-                mesh.faces[i+num].vertices = [v1,v2,v3]
+                mesh.faces[i+num].vertices = [v3,v2,v1]
                 mesh.faces[i+num].use_smooth = True
                 mesh.faces[i+num].material_index = 1 # roof material
                 mesh.edges[i+(num*3)].vertices = [v1,v2]
@@ -733,12 +760,18 @@ class Way():
         for i in range(0,num):
             uv_face = uv_texture.data[i]
             mesh_face = mesh.faces[i]
-            # calculate width of uv face using face area and road width
+            # calculate width of uv face using face area and height
             face_width = mesh_face.area/self.height
-            width = face_width/level_height
+            width = face_width/(level_height*texture_levels)
+
+            uv = []
+            uv.append((uv_x,height))
+            uv.append((uv_x+width,height))
+            uv.append((uv_x+width,0.0))
+            uv.append((uv_x,0.0))
 
             # set uvs
-            uv_face.uv_raw = (uv_x,height,uv_x+width,height,uv_x+width,0.0,uv_x,0.0)
+            uv_face.uv_raw = (uv[3][0],uv[3][1],uv[2][0],uv[2][1],uv[1][0],uv[1][1],uv[0][0],uv[0][1])
 
             uv_x+=width
 
@@ -766,11 +799,6 @@ class Way():
                     v4 = (0.0,0.0)
 
             uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
-
-        if rebuild==False:
-            selectMesh()
-            bpy.ops.mesh.normals_make_consistent()
-            deselectMesh()
 
     def createArea(self,rebuild):
         num = len(self.nodes)-1 # first and last are at the same location, so we do not need the last node
@@ -984,9 +1012,9 @@ class Way():
 
                     if tag_priority>=priority:
                         if building and material.osm.base_type == 'building':
-                            if material.osm.building_roof=='none':
+                            if material.osm.building_part=='facade':
                                 mat = material
-                            else:
+                            elif material.osm.building_part in ('flat_roof','sloped_roof'):
                                 roof_mat = material
                         if road and material.osm.base_type == 'road':
                             # prefer materials with matching lanes

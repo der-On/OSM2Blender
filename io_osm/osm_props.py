@@ -70,13 +70,13 @@ class OSM_Material(bpy.types.PropertyGroup):
 
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
 
-    building_roof = bpy.props.EnumProperty(name="Roof",
-                                            description="Roof type",
-                                            default="none",
-                                            items=[('none','none','Material will be used for facades.'),('flat','flat','Material will create a flat roof.'),('sloped','sloped','Matrerial will create a sloped roof.')])
+    building_part = bpy.props.EnumProperty(name="Part",
+                                            description="Building part",
+                                            default="facade",
+                                            items=[('facade','facade','Material will be used for facades.'),('basement','basement','Material will be used for basement.'),('flat_roof','flat roof','Material will create a flat roof.'),('sloped_roof','sloped roof','Matrerial will create a sloped roof.')])
 
-    building_levels = bpy.props.IntProperty(name="Number of levels",
-                                            description="Number of building/roof levels this texture has.",
+    building_levels = bpy.props.IntProperty(name="Number of levels in texture",
+                                            description="Number of building/roof levels the texture has.",
                                             default=1,
                                             min=1,
                                             max=100)
@@ -86,6 +86,12 @@ class OSM_Material(bpy.types.PropertyGroup):
                                             default=5.0,
                                             min=0.0,
                                             max=100.0)
+
+    building_default_levels = bpy.props.IntProperty(name="Default number of levels",
+                                            description="Number of building levels when no height information is present.",
+                                            default=3,
+                                            min=1,
+                                            max=100)
 
     lanes = bpy.props.IntProperty(name="Number of lanes",
                                     description="Number of lanes of the road.",

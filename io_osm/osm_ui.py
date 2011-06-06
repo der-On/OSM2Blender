@@ -73,10 +73,12 @@ class MATERIAL_PT_OSM(bpy.types.Panel):
         box = layout.box()
         box.prop(osm,'base_type')
         if osm.base_type=='building':
-            box.prop(osm,'building_roof')
-            if osm.building_roof!='flat':
+            box.prop(osm,'building_part')
+            if osm.building_part in ('facade','sloped_roof'):
                 box.prop(osm,'building_levels')
                 box.prop(osm,'building_level_height')
+            if osm.building_part=='facade':
+                box.prop(osm,'building_default_levels')
         elif osm.base_type=='road':
             box.prop(osm,'lanes')
             box.prop(osm,'lane_width')
