@@ -79,11 +79,25 @@ def rebuild_osm(filepath,context):
     # reset undo preference
     context.user_preferences.edit.use_global_undo = global_undo
 
+def remove_osm(context):
+    for object in context.scene.objects:
+        if object.osm.id!='':
+            context.scene.objects.unlink(object)
+            if object.data:
+                mesh = object.data
+            else:
+                mesh = None
+            bpy.data.objects.remove(object)
+
+            if mesh:
+                bpy.data.meshes.remove(mesh)
+            
+
 def load(operator, context, filepath=""):
     load_osm(filepath, context)
     return {'FINISHED'}
 
-def selectObject(obj,scene):
+def selectObject(scene,obj):
     obj.select = True
     scene.objects.active = obj #set the mesh object to current
 

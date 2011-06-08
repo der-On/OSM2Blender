@@ -21,36 +21,19 @@ class SCENE_PT_OSM(bpy.types.Panel):
             row = layout.row()
             row.label('File: '+path.basename(osm.file))
             row = layout.row()
+            row.operator('scene.remove_osm')
+            row = layout.row()
             if path.exists(osm.file):
                 row.operator('scene.rebuild_osm')
             else:
                 row.label('Warning: Cannot rebuild because OSM file has been removed!')
-
-        # General
-        box = layout.box()
-        box.label(text="General")
-        box.prop(osm,'traffic_direction')
-        box.prop(osm,'latlon_scale')
-
-        # Roads
-        box = layout.box()
-        box.label(text="Traffic")
-        box.prop(osm,'offset_step')
-        box.prop(osm,'lane_width')
-        box.prop(osm,'cycleway_width')
-        box.prop(osm,'railway_width')
-
-        # Buildings
-        box = layout.box()
-        box.label(text="Buildings")
-        box.prop(osm,'building_level_height')
-        box.prop(osm,'building_default_levels')
-        box.prop(osm,'roof_texture_scale')
-
-        # Areas
-        box = layout.box()
-        box.label(text="Areas")
-        box.prop(osm,'area_texture_scale')
+                
+        row = layout.row()
+        row.prop(osm,'traffic_direction')
+        row = layout.row()
+        row.prop(osm,'latlon_scale')
+        row = layout.row()
+        row.prop(osm,'offset_step')
 
 class MATERIAL_PT_OSM(bpy.types.Panel):
     '''OSM Material Panel'''
@@ -82,6 +65,7 @@ class MATERIAL_PT_OSM(bpy.types.Panel):
         elif osm.base_type=='road':
             box.prop(osm,'lanes')
             box.prop(osm,'lane_width')
+            box.prop(osm,'road_sort')
         elif osm.base_type=='area':
             pass
 
@@ -153,6 +137,7 @@ def tags_layout(layout,osm,group=None):
         tag_box.prop(osm.tags[i],'name')
         tag_box.prop(osm.tags[i],'value')
         tag_box.prop(osm.tags[i],'priority')
+        tag_box.prop(osm.tags[i],'obligatory')
         if group:
             op = tag_box.operator('group.remove_osm_tag')
             op.index = i

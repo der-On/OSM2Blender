@@ -54,15 +54,26 @@ class GROUP_OT_remove_osm_tag(bpy.types.Operator):
 class SCENE_OT_rebuild_osm(bpy.types.Operator):
     bl_label = 'Rebuild'
     bl_idname = 'scene.rebuild_osm'
-    bl_description = 'Rereads osm file and rebuilds existing objects.'
+    bl_description = 'Rereads OSM file and rebuilds existing OSM objects.'
 
     def execute(self,context):
         from os import path
         from io_osm.import_osm import rebuild_osm
         
-        filepath = context.scene.osm.file
         if filepath!='' and path.exists(filepath):
             rebuild_osm(filepath,context)
+        return {'FINISHED'}
+
+class SCENE_OT_remove_osm(bpy.types.Operator):
+    bl_label = 'Remove'
+    bl_idname = 'scene.remove_osm'
+    bl_description = 'Removes all OSM objects in the scene.'
+
+    def execute(self,context):
+        from os import path
+        from io_osm.import_osm import remove_osm
+
+        remove_osm(context)
         return {'FINISHED'}
 
 
@@ -72,6 +83,7 @@ def register_ops():
     bpy.utils.register_class(GROUP_OT_add_osm_tag)
     bpy.utils.register_class(GROUP_OT_remove_osm_tag)
     bpy.utils.register_class(SCENE_OT_rebuild_osm)
+    bpy.utils.register_class(SCENE_OT_remove_osm)
 
 def unregister_ops():
     bpy.utils.unregister_class(MATERIAL_OT_add_osm_tag)
@@ -79,3 +91,4 @@ def unregister_ops():
     bpy.utils.unregister_class(GROUP_OT_add_osm_tag)
     bpy.utils.unregister_class(GROUP_OT_remove_osm_tag)
     bpy.utils.unregister_class(SCENE_OT_rebuild_osm)
+    bpy.utils.unregister_class(SCENE_OT_remove_osm)

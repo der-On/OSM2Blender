@@ -4,9 +4,12 @@ class OSM_Tag(bpy.types.PropertyGroup):
     name = bpy.props.StringProperty(name="Name")
     value = bpy.props.StringProperty(name="Value")
     priority = bpy.props.IntProperty(name="Priority",
-                                    description="Higher priority tags will act as parent tags to lower priority tags.",
+                                    description="To priorise tags with same name and value in different materials.",
                                     default=0,
                                     min=0)
+    obligatory = bpy.props.BoolProperty(name="Oblgiatory",
+                                    description="Will only be applied if the object has this tag also.",
+                                    default=False)
 
 
 class OSM_Scene(bpy.types.PropertyGroup):
@@ -21,44 +24,9 @@ class OSM_Scene(bpy.types.PropertyGroup):
 
     offset_step = bpy.props.FloatProperty(name="Z-Sorting offset",
                                             default=0.001,
-                                            min=0.001,
+                                            min=0.01,
                                             max=0.1,
                                             precision=4)
-
-    lane_width = bpy.props.FloatProperty(name="Road lane width",
-                                            default=3.0,
-                                            min=0.0,
-                                            max=10.0)
-
-    cycleway_width = bpy.props.FloatProperty(name="Cycleway width",
-                                            default=1.0,
-                                            min=0.0,
-                                            max=10.0)
-
-    railway_width = bpy.props.FloatProperty(name="Railway width",
-                                            default=1.5,
-                                            min=0.0,
-                                            max=10.0)
-
-    building_level_height = bpy.props.FloatProperty(name="Height of one level",
-                                            default=5.0,
-                                            min=0.0,
-                                            max=100.0)
-
-    building_default_levels = bpy.props.FloatProperty(name="Default number of levels",
-                                            default=3.0,
-                                            min=0.0,
-                                            max=100.0)
-
-    roof_texture_scale = bpy.props.FloatProperty(name="Roof texture scale",
-                                            default=1.0,
-                                            min=0.0,
-                                            max=100.0)
-
-    area_texture_scale = bpy.props.FloatProperty(name="Area texture scale",
-                                            default=1.0,
-                                            min=0.0,
-                                            max=100.0)
 
     file = bpy.props.StringProperty(name="File",default='')
 
@@ -66,7 +34,7 @@ class OSM_Scene(bpy.types.PropertyGroup):
 class OSM_Material(bpy.types.PropertyGroup):
     base_type = bpy.props.EnumProperty(name="Base type",
                                         default='building',
-                                        items=[('building','building','building'),('road','traffic','All kinds of traffic ways.'),('area','area','Flat area.')])
+                                        items=[('building','building','building'),('road','traffic','All kinds of traffic ways.'),('area','area','Flat area.'),('barrier','barrier','All kinds of walls, fences or other barriers.')])
 
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
 
@@ -93,6 +61,12 @@ class OSM_Material(bpy.types.PropertyGroup):
                                             min=1,
                                             max=100)
 
+    road_sort = bpy.props.IntProperty(name="Z-Sorting index",
+                                    description="Higher values will make the road be positioned below roads with lower values.",
+                                    default=0,
+                                    min=0,
+                                    max=100)
+
     lanes = bpy.props.IntProperty(name="Number of lanes",
                                     description="Number of lanes of the road.",
                                     default=2,
@@ -104,6 +78,12 @@ class OSM_Material(bpy.types.PropertyGroup):
                                     default=3.0,
                                     min=0.0,
                                     max=100.0)
+
+    barrier_width = bpy.props.FloatProperty(name="Barrier width",
+                                    description="Width of the barrier.",
+                                    default=0.0,
+                                    max=100.0)
+                                    
 
 class OSM_Object(bpy.types.PropertyGroup):
     id = bpy.props.StringProperty(name="ID")

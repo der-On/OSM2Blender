@@ -11,10 +11,10 @@ BARRIER_TAG = 'barrier'
 USAGE_TAGS = ['amenity','shop','office','craft','emergency','tourism','historic','military']
 ROAD_TAG = 'highway'
 CYCLEWAY_TAG = 'cycleway'
-AREA_TAGS = ('area','natural','landuse','leisure')
 RAILWAY_TAG = 'railway'
+WATERWAY_TAG = 'waterway'
 UNIT_SCALES = {'m':1,'ft':0.305}
-LAYERS = ['building','area','road','object',None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None]
+LAYERS = ['building','barrier','object','area','road']
 
 ROADS_SORT_ORDER = [None,'cycleway','railway']
 
@@ -24,7 +24,7 @@ POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
 class OSM():
     xml = None
     nodes = {}
-    ways = {'area':[],'building':[],'road':[],'by_id':{},'sorted':[]}
+    ways = {'area':[],'building':[],'road':[],'barrier':[],'by_id':{},'sorted':[]}
     relations = {}
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     dimensions = Vector((0.0,0.0))
@@ -42,19 +42,12 @@ class OSM():
     # config
     latlon_scale = 3.33
     right_hand_traffic = True
-    offset_step = 0.001
-    lane_width = 3.0
-    cycleway_width = 1.0
-    railway_width = 1.5
-    building_level_height = 5.0
-    building_default_levels = 3
-    roof_texture_scale = 1.0
-    area_texture_scale = 1.0
+    offset_step = 0.01
     file = None
 
     def __init__(self,xml):
         self.nodes = {}
-        self.ways = {'area':[],'building':[],'road':[],'by_id':{},'sorted':[]}
+        self.ways = {'area':[],'building':[],'road':[],'barrier':[],'by_id':{},'sorted':[]}
         self.relations = {}
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.dimensions = Vector((0.0,0.0))
@@ -98,13 +91,7 @@ class OSM():
 
         self.latlon_scale = osm.latlon_scale
         self.offset_step = osm.offset_step
-        self.lane_width = osm.lane_width
-        self.cycleway_width = osm.cycleway_width
-        self.railway_width = osm.railway_width
-        self.building_level_height = osm.building_level_height
-        self.building_default_levels = osm.building_default_levels
-        self.roof_texture_scale = osm.roof_texture_scale
-        self.area_texture_scale = osm.area_texture_scale
+        self.file = osm.file
 
     def setConfigTags(self):
         for material in bpy.data.materials:
@@ -169,7 +156,7 @@ class OSM():
 
         # set to layers
         if rebuild==False:
-            for i in range(0,20):
+            for i in range(0,len(LAYERS)):
                 if LAYERS[i]:
                     if LAYERS[i]=='object':
                         self.setToLayer(self.nodes,i,True)
@@ -250,10 +237,8 @@ class OSM():
         colliding = self.getCollidingWays(way,'area','offset')
         if len(colliding)>0:
             offset = colliding[0].offset
-            for i in range(0,len(ROADS_SORT_ORDER)):
-                if (way.type[2] and way.type[2]==ROADS_SORT_ORDER[i]) or (way.type[1] and way.type[1]==ROADS_SORT_ORDER[i]):
-                    return offset+(self.offset_step*i)
-            return offset
+            sort_index = way.object.material_slots[0].material.road_sort
+            return offset+(self.offset_step*(sort_index+1))
         return 0.0
 
     def createGround(self):
@@ -339,28 +324,32 @@ class OSM():
         areas = []
         buildings = []
         roads = []
+        barriers = []
         by_id = {}
 
         xml_ways = xml.getElementsByTagName('way')
         for i in range(0,xml_ways.length):
             way = Way(xml_ways.item(i),self)
             by_id[way.id] = way
-            if way.type[0]=='area':
+            if way.type=='area':
                 areas.append(way)
-            elif way.type[0]=='building':
+            elif way.type=='building':
                 buildings.append(way)
-            elif way.type[0]=='road':
+            elif way.type=='road':
                 roads.append(way)
+            elif way.type=='barrier':
+                barriers.append(way)
 
-        return {'area':areas,'building':buildings,'road':roads,'by_id':by_id,'sorted':[]}
+        return {'area':areas,'building':buildings,'road':roads,'barrier':barriers,'by_id':by_id,'sorted':[]}
 
-    def getNodeRefs(self,xml):
+    def getNodeRefs(self,way,xml):
         refs = []
         xml_nds = xml.getElementsByTagName('nd')
         for i in range(0,xml_nds.length):
             id = xml_nds.item(i).attributes['ref'].value
             if id in self.nodes:
                 node = self.nodes[id]
+                node.ways.append(way)
                 refs.append(node)
 
         return refs
@@ -411,7 +400,7 @@ class OSM():
     def sortCollidingWaysByAreaSize(self,way):
         way_offset = self.offset
         if way.id not in self.ways['sorted']:
-            colliding = self.getCollidingWays(way,way.type[0])
+            colliding = self.getCollidingWays(way,way.type)
             if len(colliding)>0:
                 for i in range(0,len(colliding)):
                     way_offset = self.offset + (i*self.offset_step)
@@ -425,7 +414,7 @@ class OSM():
     def getCollidingWays(self,way,type,sort_by='area',reverse=True):
         from operator import attrgetter
         colliding = []
-        if way.type[0] and way.type[0]==type:
+        if way.type and way.type==type:
             colliding.append(way)
 
         if type in self.ways:
@@ -438,12 +427,48 @@ class OSM():
         return colliding
 
     def waysCollide(self,way_a,way_b):
+        # pre check with bounding box in 2d plane
         collide = (way_a.bounds[0][0] < way_b.bounds[1][0]) and (way_a.bounds[1][0] > way_b.bounds[0][0]) and (way_a.bounds[0][1] < way_b.bounds[1][1]) and (way_a.bounds[1][1] > way_b.bounds[0][1])
-        return collide
+        if collide: # detail check with point to face intersection in 2d plane
+            # TODO: we should use nodes instead of mesh vertices
+            mesh_a = way_a.object.data
+            mesh_b = way_b.object.data
+            for i in range(0,len(way_b.object.data.faces)):
+                for ii in range(0,len(way_a.object.data.vertices)):
+                    face = mesh_b.faces[i]
+                    va = mesh_a.vertices[ii].co.copy()
+                    va = Vector((va[0],va[1]))
+                    if len(face.vertices)>3:
+                        vb_1 = mesh_b.vertices[face.vertices[0]].co.copy()
+                        vb_2 = mesh_b.vertices[face.vertices[1]].co.copy()
+                        vb_3 = mesh_b.vertices[face.vertices[2]].co.copy()
+                        vb_4 = mesh_b.vertices[face.vertices[3]].co.copy()
 
+                        vb_1 = Vector((vb_1[0],vb_1[1]))
+                        vb_2 = Vector((vb_2[0],vb_2[1]))
+                        vb_3 = Vector((vb_3[0],vb_3[1]))
+                        vb_4 = Vector((vb_4[0],vb_4[1]))
+
+                        if geometry.intersect_point_quad_2d(va,vb_1,vb_2,vb_3,vb_4):
+                            return True
+                    else:
+                        vb_1 = mesh_b.vertices[face.vertices[0]].co.copy()
+                        vb_2 = mesh_b.vertices[face.vertices[1]].co.copy()
+                        vb_3 = mesh_b.vertices[face.vertices[2]].co.copy()
+
+                        vb_1 = Vector((vb_1[0],vb_1[1]))
+                        vb_2 = Vector((vb_2[0],vb_2[1]))
+                        vb_3 = Vector((vb_3[0],vb_3[1]))
+
+                        if geometry.intersect_point_tri_2d(va,vb_1,vb_2,vb_3):
+                            return True
+            return False
+        else:
+            return False
+        
     def setLayer(self,way):
-        for i in range(0,20):
-            if way.type[0]==LAYERS[i]:
+        for i in range(0,len(LAYERS)):
+            if way.type==LAYERS[i]:
                 way.object.layers[i] = True
             else:
                 way.object.layers[i] = False
@@ -500,31 +525,28 @@ class Way():
     nodes = []
     tags = {}
     type = None
-    height = None
-    width = 0
-    lanes = 1
-    levels = 0
     object = None
+    geometry = None
     osm = None
     area = 0.0
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     offset = 0.0
     level = 0
+    materials = []
 
     def __init__(self,xml,osm):
         self.osm = osm
         self.id = xml.attributes['id'].value
         self.tags = self.osm.getTags(xml)
-        self.nodes = self.osm.getNodeRefs(xml)
+        self.nodes = self.osm.getNodeRefs(self,xml)
         self.area = 0.0
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.offset = 0.0
         self.level = 0
-        self.levels = None
-        self.height = None
-        self.lanes = 1
-        self.setLevel()
+        self.materials = []
+        self.setMaterials()
         self.setType()
+        self.setLevel()
         self.setName()
 
     def setLevel(self):
@@ -533,84 +555,23 @@ class Way():
                 self.level = char(int(self.tags['level'].value))
             except:
                 self.level = -1
-
-    def setType(self):
-        self.type = [None,None,None]
-        if BUILDING_TAG in self.tags:
-            self.type[0] = 'building'
-            self.type[1] = self.tags[BUILDING_TAG].value
-            if 'height' in self.tags:
-                self.height = self.osm.getMeters(self.tags['height'].value)
-                self.levels = self.height/self.osm.building_level_height
-            else:
-                self.levels = self.osm.building_default_levels
-                #self.height = self.levels*self.osm.building_level_height
-
-        if ROAD_TAG in self.tags:
-            self.type[0] = 'road'
-            self.type[1] = self.tags[ROAD_TAG].value
-            if 'lanes' in self.tags:
-                self.lanes = int(self.tags['lanes'].value)
-                
-            self.width = self.osm.lane_width*self.lanes
-
-        if CYCLEWAY_TAG in self.tags:
-            if self.tags[CYCLEWAY_TAG].value=='track': # Only standalone cycleways should be created
-                self.type[0] = 'road'
-                self.type[1] = CYCLEWAY_TAG
-                self.type[2] = self.tags[CYCLEWAY_TAG].value
-                self.width = self.osm.cycleway_width
-
-        if RAILWAY_TAG in self.tags:
-            self.type[0] = 'road'
-            self.type[1] = RAILWAY_TAG
-            self.type[2] = self.tags[RAILWAY_TAG].value
-            self.width = self.osm.railway_width
-
-        for name in AREA_TAGS:
-            if name in self.tags:
-                self.type[0] = 'area'
-                if self.tags[name].value!='yes':
-                    self.type[1] = name
-                    self.type[2] = self.tags[name].value
-
+        
     def setName(self):
         if 'name' in self.tags:
             self.name = self.tags['name'].value
         else:
-            self.name = '%s_%s' % (self.type[0],self.id)
+            self.name = '%s_%s' % (self.type,self.id)
 
-    def isClockwise(self):
-        pos = 0
-        neg = 0
-        num = len(self.nodes)-1
-        
-        for i in range(0,num):
-            v1 = Vector((self.nodes[(i-1) % num].co[0],self.nodes[(i-1) % num].co[1]))
-            v2 = Vector((self.nodes[i].co[0],self.nodes[i].co[1]))
-            v3 = Vector((self.nodes[(i+1) % num].co[0],self.nodes[(i+1) % num].co[1]))
-
-            cross = (v2[0]-v1[0])*(v3[1]-v2[1]) - (v2[1]-v1[1])*(v3[0]-v2[0])
-            
-            if cross>0:
-                pos+=1
-            if cross<0:
-                neg+=1
-        
-        return neg>=pos
-
-    def generate(self,rebuild):
-        if self.level>=0 and self.type[0]:
+    def generate(self,rebuild, object = None):
+        if self.type and self.level>=0:
             if debug:
                 debugger.debug('%3.2f' % (self.osm.process) +'% ' + self.name)
-            self.createObject(rebuild)
+            self.createObject(rebuild,object)
             if self.object:
-                selectObject(self.object,self.osm.scene)
-                self.setMaterial(rebuild)
-                self.create(rebuild)
-                deselectObject(self.object)
-
-                self.setArea()
+                if self.type:
+                    self.createGeometry(rebuild)
+                    self.area = self.geometry.getArea()
+                    
                 self.bounds[0][0] = self.object.location[0]-(self.object.dimensions[0]/2)
                 self.bounds[1][0] = self.object.location[0]+(self.object.dimensions[0]/2)
                 self.bounds[0][1] = self.object.location[1]-(self.object.dimensions[1]/2)
@@ -619,27 +580,24 @@ class Way():
                 # align objects along center edge
                 self.alignObjects()
 
-    def setArea(self):
-        for face in self.object.data.faces:
-            self.area+=face.area
-
-    def create(self,rebuild):
+    # TODO: check if a group with the osm-property "name" with same name as the way exists and use that instead of generic mesh
+    def createGeometry(self,rebuild):
         # TODO: look for USAGE_TAGS groups and place them on top of building, on every node for lines or in object center for areas
         # TODO: allow for scalable or repeatable groups in between nodes for lines (cables of powerlines for example)
         # TODO: allow for scatterable groups for natural area types (trees, bushes, etc.)
-        if self.type[0]=='building':
-            self.createBuilding(rebuild)
-        elif self.type[0]=='area':
-            self.createArea(rebuild)
-        elif self.type[0] in ('road','cycleway'):
-            self.createRoad(rebuild)
+        if self.type=='building':
+            self.geometry = Building(self)
+        elif self.type=='area':
+            self.geometry = Area(self)
+        elif self.type in ('road'):
+            self.geometry = Road(self)
+        elif self.type=='barrier':
+            self.geometry = Barrier(self)
 
-        if rebuild==False:
-            edge_split = self.object.modifiers.new(name="edge_split",type="EDGE_SPLIT")
-            edge_split.split_angle = 40.00
-
-
-    def createObject(self,rebuild):
+        if self.geometry:
+            self.geometry.create(rebuild)
+            
+    def createObject(self,rebuild, object = None):
         if rebuild==False:
             mesh = bpy.data.meshes.new(self.name)
             self.object = bpy.data.objects.new(self.name,mesh)
@@ -651,25 +609,184 @@ class Way():
                 obj_tag.value = self.tags[tag].value
 
             self.osm.scene.objects.link(self.object)
-        else:
-            for object in self.osm.scene.objects:
-                if object.osm.id == self.id:
-                    self.object = object
-                    return
+            self.object.location = self.getCenter()
+        elif object:
+            self.object = object
 
-    # TODO: check if a group with the osm-property "name" with same name as the way exists and use that instead of generic mesh
-    def createBuilding(self,rebuild):
-        from mathutils import geometry
-        num = len(self.nodes)-1 # first and last are at the same location, so we do not need the last node
-        v_num = num*2
-        mesh = self.object.data
+    def getCenter(self):
+        v = Vector((0.0,0.0,0.0))
+        for node in self.nodes:
+            v+=node.co
+        return v/len(self.nodes)
+
+    def alignObjects(self):
+        from mathutils import Euler
+        upvector = Vector((0.0,0.0,1.0))
         
-        # update height from material level height
-        material = self.object.material_slots[0].material
-        if material:
-            if self.height==None: # no explicit height info in way
-                self.levels = material.osm.building_default_levels
-                self.height = self.levels*material.osm.building_level_height
+        for i in range(0,len(self.nodes)):
+            # check for referenced objects and align them with center edge on xy plane, means rotate on z-axis only
+            if self.nodes[i].object:
+                if i>0:
+                    start_v = self.nodes[i-1].co
+                else:
+                    start_v = self.nodes[i].co
+
+                if i<len(self.nodes)-1:
+                    end_v = self.nodes[i+1].co
+                else:
+                    end_v = self.nodes[i].co
+
+                normal = (start_v-end_v).normalized().cross(upvector)
+                rot = normal.to_track_quat('X','Z').to_euler()
+                self.nodes[i].object.rotation_euler = rot
+
+                # offset the object to the side so it next to a road
+                if hasattr(self.geometry,'width') and self.geometry.width>0:
+                    offset = normal*(self.geometry.width/2)
+                    if self.osm.right_hand_traffic:
+                        self.nodes[i].object.location-=offset
+                    else:
+                        self.nodes[i].object.location-=offset
+    
+    def setMaterials(self):
+        mat = None
+        roof_mat = None
+        basement_mat = None
+
+        lanes = 1
+        if 'lanes' in self.tags:
+            lanes = int(self.tags['lanes'].value)
+
+        priority = 0
+        
+        for name in self.tags:
+            tag = self.tags[name]
+            tag_config = self.osm.getTagConfig(tag.name,tag.value)
+            if tag_config:
+                for material in tag_config.materials:
+                    mat_tag = tag_config.getTagInList(material.osm.tags)
+                    tag_priority = mat_tag.priority
+
+                    if tag_priority>=priority:
+                        if material.osm.base_type == 'building':
+                            if material.osm.building_part=='facade':
+                                mat = material
+                            elif material.osm.building_part in ('flat_roof','sloped_roof'):
+                                roof_mat = material
+                            elif material.osm.building_part=='basement':
+                                basement_mat = material
+                        if material.osm.base_type == 'road':
+                            # prefer materials with matching lanes
+                            if mat==None or mat.osm.lanes!=lanes:
+                                mat = material
+                        if material.osm.base_type == 'area':
+                            mat = material
+
+                        priority = tag_priority
+                        
+        if mat:
+            self.materials.append(mat)
+        if roof_mat:
+            self.materials.append(roof_mat)
+        if basement_mat:
+            self.materials.append(basement_mat)
+
+    def getMaterial(self,index = 0):
+        if index < len(self.materials):
+            return self.materials[index]
+        else:
+            return None
+
+    def setType(self):
+        self.type = None
+
+        if len(self.materials)>0:
+            self.type = self.materials[0].osm.base_type
+    
+    def setOffset(self,offset):
+        if self.object:
+            self.offset = offset
+            self.object.location[2] = offset
+
+    def isClockwise(self):
+        pos = 0
+        neg = 0
+        num = len(self.nodes)-1
+
+        for i in range(0,num):
+            v1 = Vector((self.nodes[(i-1) % num].co[0],self.nodes[(i-1) % num].co[1]))
+            v2 = Vector((self.nodes[i].co[0],self.nodes[i].co[1]))
+            v3 = Vector((self.nodes[(i+1) % num].co[0],self.nodes[(i+1) % num].co[1]))
+
+            cross = (v2[0]-v1[0])*(v3[1]-v2[1]) - (v2[1]-v1[1])*(v3[0]-v2[0])
+
+            if cross>0:
+                pos+=1
+            if cross<0:
+                neg+=1
+
+        return neg>=pos
+
+    def isClosed(self):
+        num = len(self.nodes)
+        for i in range(0,3):
+            if self.nodes[0].co[i]!=self.nodes[num-1].co[i]:
+                return False
+        return True
+
+
+class Geometry():
+    way = None
+
+    def __init__(self,way):
+        self.way = way
+
+    def create(self,rebuild):
+        if rebuild==False:
+            mesh = self.way.object.data
+
+            for i in range(0,len(self.way.materials)):
+                if i>=len(mesh.materials):
+                    mesh.materials.append(self.way.materials[i])
+                else:
+                    mesh.materials[i] = self.way.materials[i]
+            
+            edge_split = self.way.object.modifiers.new(name="edge_split",type="EDGE_SPLIT")
+            edge_split.split_angle = 40.00
+            
+    def getArea(self):
+        area = 0.0
+        for face in self.way.object.data.faces:
+            area+=face.area
+        return area
+        
+
+class Building(Geometry):
+    height = None
+    levels = 0
+
+    def __init__(self,way):
+        super(Building,self).__init__(way)
+        self.levels = None
+        self.height = None
+
+    # TODO: split this up into more methods
+    def create(self,rebuild):
+        super(Building,self).create(rebuild)
+
+        material = self.way.getMaterial()
+
+        if 'height' in self.way.tags:
+            self.height = self.way.osm.getMeters(self.tags['height'].value)
+            self.levels = self.height/material.osm.building_level_height
+        else:
+            self.levels = material.osm.building_default_levels
+            self.height = self.levels*material.osm.building_level_height
+
+        from mathutils import geometry
+        num = len(self.way.nodes)-1 # first and last are at the same location, so we do not need the last node
+        v_num = num*2
+        mesh = self.way.object.data
 
         if rebuild==False:
             mesh.vertices.add(v_num)
@@ -677,26 +794,22 @@ class Way():
             mesh.faces.add(num)
 
         # TODO: we have to reverse node order if direction is counter clockwise.
-        clockwise = self.isClockwise()
+        clockwise = self.way.isClockwise()
         if clockwise:
-            self.nodes.reverse()
-            
+            self.way.nodes.reverse()
+
         for i in range(0,num):
             # bottom
-            if rebuild:
-                mesh.vertices[i].co = self.nodes[i].co-self.object.location
-            else:
-                mesh.vertices[i].co = self.nodes[i].co
+            mesh.vertices[i].co = self.way.nodes[i].co-self.way.object.location
+            if rebuild==False:
                 mesh.edges[i].vertices = [i,(i+1) % num]
-                
+
             # top
-            if rebuild:
-                mesh.vertices[i+num].co = self.nodes[i].co.copy()-self.object.location
-            else:
-                mesh.vertices[i+num].co = self.nodes[i].co.copy()
+            mesh.vertices[i+num].co = self.way.nodes[i].co.copy()-self.way.object.location
+            if rebuild==False:
                 mesh.edges[i+num].vertices = [i+num,((i+1) % num)+num]
 
-            mesh.vertices[i+num].co[2]+=self.height            
+            mesh.vertices[i+num].co[2]+=self.height
 
             # joining edge
             if rebuild==False:
@@ -736,27 +849,21 @@ class Way():
                 mesh.edges[i+(num*3)+2].vertices = [v3,v1]
 
             mesh.validate()
-            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
 
         # create uvs
         if rebuild:
             uv_texture = mesh.uv_textures[0]
         else:
             uv_texture = mesh.uv_textures.new()
-            
+
         # facade uvs
         uv_x = 0.0
 
         # uv factors
-        if material:
-            level_height = material.osm.building_level_height
-            texture_levels = material.osm.building_levels
-        else:
-            level_height = self.osm.building_level_height
-            texture_levels = 1
-
+        level_height = material.osm.building_level_height
+        texture_levels = material.osm.building_levels
         height = self.levels/texture_levels
-        
+
         for i in range(0,num):
             uv_face = uv_texture.data[i]
             mesh_face = mesh.faces[i]
@@ -776,103 +883,47 @@ class Way():
             uv_x+=width
 
         # roof uvs
-        scale = self.osm.roof_texture_scale
-
         for i in range(num,len(mesh.faces)):
             uv_face = uv_texture.data[i]
             mesh_face = mesh.faces[i]
-            if rebuild:
-                v1 = (mesh.vertices[mesh_face.vertices[0]].co.copy()*scale)-self.object.location
-                v2 = (mesh.vertices[mesh_face.vertices[1]].co.copy()*scale)-self.object.location
-                v3 = (mesh.vertices[mesh_face.vertices[2]].co.copy()*scale)-self.object.location
-                if len(mesh_face.vertices)==4:
-                    v4 = (mesh.vertices[mesh_face.vertices[3]].co.copy()*scale)-self.object.location
-                else:
-                    v4 = (0.0,0.0)
-            else:
-                v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()*scale
-                v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()*scale
-                v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()*scale
-                if len(mesh_face.vertices)==4:
-                    v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()*scale
-                else:
-                    v4 = (0.0,0.0)
-
-            uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
-
-    def createArea(self,rebuild):
-        num = len(self.nodes)-1 # first and last are at the same location, so we do not need the last node
-        mesh = self.object.data
-
-        if rebuild==False:
-            mesh.vertices.add(num)
-            mesh.edges.add(num)
-
-            for i in range(0,num):
-                mesh.vertices[i].co = self.nodes[i].co
-                mesh.edges[i].vertices = [i,(i+1) % num]
-
-            # fill
-            veclist = []
-            for i in range(0,num):
-                veclist.append(mesh.vertices[i].co)
-
-            fill_vecs = geometry.tesselate_polygon([veclist])
-
-            # add new edges and faces
-            mesh.faces.add(len(fill_vecs))
-            mesh.edges.add(len(fill_vecs)*3)
-            for i in range(0,len(fill_vecs)):
-                v1 = fill_vecs[i][0]
-                v2 = fill_vecs[i][1]
-                v3 = fill_vecs[i][2]
-                mesh.faces[i].vertices = [v3,v2,v1]
-                mesh.faces[i].use_smooth = True
-                mesh.edges[i].vertices = [v1,v2]
-                mesh.edges[i+1].vertices = [v2,v3]
-                if len(mesh.edges)>=i+2:
-                    mesh.edges[i+2].vertices = [v3,v1]
-
-            mesh.validate()
-            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
-
-            # create uvs
-            uv_texture = mesh.uv_textures.new()
-        else:
-            uv_texture = mesh.uv_textures[0]
             
-        scale = self.osm.area_texture_scale
-
-        for i in range(0,len(mesh.faces)):
-            uv_face = uv_texture.data[i]
-            mesh_face = mesh.faces[i]
-            v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()*scale
-            v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()*scale
-            if len(mesh_face.vertices)>=3:
-                v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()*scale
-            else:
-                v3 = (0.0,0.0)
+            v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()
+            v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()
+            v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()
             if len(mesh_face.vertices)==4:
-                v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()*scale
+                v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()
             else:
                 v4 = (0.0,0.0)
 
             uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
 
-    def createRoad(self,rebuild):
+
+class Road(Geometry):
+    width = 0.0
+    lanes = 1
+
+    def __init__(self,way):
+        super(Road,self).__init__(way)
+        self.lanes = 1
+        self.width = 0
+
+    def create(self,rebuild):
+        super(Road,self).create(rebuild)
+
+        material = self.way.getMaterial()
+
+        if 'lanes' in self.way.tags:
+            self.lanes = int(self.way.tags['lanes'].value)
+        self.width = material.osm.lane_width*self.lanes
+
         from mathutils import Euler
         upvector = Vector((0.0,0.0,1.0))
 
-        num = len(self.nodes)
-        v_num = len(self.nodes)*2
+        num = len(self.way.nodes)
+        v_num = len(self.way.nodes)*2
 
-        mesh = self.object.data
-
-        # rebuild width from material
-        material = self.object.material_slots[0].material
-        if material and material.osm.base_type=='road':
-            self.width = material.osm.lane_width*self.lanes
-
+        mesh = self.way.object.data
+        
         if rebuild==False:
             mesh.vertices.add(v_num)
             mesh.faces.add(num-1)
@@ -880,14 +931,14 @@ class Way():
 
         for i in range(0,num):
             if i>0:
-                start_v = self.nodes[i-1].co
+                start_v = self.way.nodes[i-1].co
             else:
-                start_v = self.nodes[i].co
+                start_v = self.way.nodes[i].co
 
             if i<num-1:
-                end_v = self.nodes[i+1].co
+                end_v = self.way.nodes[i+1].co
             else:
-                end_v = self.nodes[i].co
+                end_v = self.way.nodes[i].co
 
             normal = (start_v-end_v).normalized().cross(upvector)
             offset = normal*(self.width/2)
@@ -897,12 +948,8 @@ class Way():
             # position vertices
             ii = i*2
 
-            if rebuild:
-                mesh.vertices[ii].co = self.nodes[i].co+offset-self.object.location # left
-                mesh.vertices[ii+1].co = self.nodes[i].co-offset-self.object.location # right
-            else:
-                mesh.vertices[ii].co = self.nodes[i].co+offset # left
-                mesh.vertices[ii+1].co = self.nodes[i].co-offset # right
+            mesh.vertices[ii].co = self.way.nodes[i].co+offset-self.way.object.location # left
+            mesh.vertices[ii+1].co = self.way.nodes[i].co-offset-self.way.object.location # right
 
             # joining edge
             if rebuild==False:
@@ -920,7 +967,6 @@ class Way():
 
         if rebuild==False:
             mesh.validate()
-            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY")
 
         # create uvs
         if rebuild:
@@ -949,90 +995,88 @@ class Way():
             uv_face.uv_raw = (0.0,uv_y+height,width,uv_y+height,width,uv_y,0.0,uv_y)
 
             uv_y+=height
-            
 
-    def alignObjects(self):
-        from mathutils import Euler
-        upvector = Vector((0.0,0.0,1.0))
 
-        for i in range(0,len(self.nodes)):
-            # check for referenced objects and align them with center edge on xy plane, means rotate on z-axis only
-            if self.nodes[i].object:
-                if i>0:
-                    start_v = self.nodes[i-1].co
-                else:
-                    start_v = self.nodes[i].co
+class Area(Geometry):
+    def __init__(self,way):
+        super(Area,self).__init__(way)
 
-                if i<len(self.nodes)-1:
-                    end_v = self.nodes[i+1].co
-                else:
-                    end_v = self.nodes[i].co
+    def create(self,rebuild):
+        super(Area,self).create(rebuild)
 
-                normal = (start_v-end_v).normalized().cross(upvector)
-                rot = normal.to_track_quat('X','Z').to_euler()
-                self.nodes[i].object.rotation_euler = rot
+        material = self.way.getMaterial()
 
-                # offset the object to the side so it next to a road
-                if self.width>0:
-                    offset = normal*(self.width/2)
-                    if self.osm.right_hand_traffic:
-                        self.nodes[i].object.location-=offset
-                    else:
-                        self.nodes[i].object.location-=offset
-    
-    def setMaterial(self,rebuild):
-        # facade
+        num = len(self.way.nodes)-1 # first and last are at the same location, so we do not need the last node
+        mesh = self.way.object.data
+
         if rebuild==False:
-            bpy.ops.object.material_slot_add()
-            
-        building = False
-        road = False
-        area = False
-        
-        if self.type[0]=='building':
-            building = True
-            bpy.ops.object.material_slot_add() # roof
-        elif self.type[0]=='road':
-            road = True
-        elif self.type[0]=='area':
-            area = True
+            mesh.vertices.add(num)
+            mesh.edges.add(num)
 
-        mat = None
-        roof_mat = None
+            for i in range(0,num):
+                mesh.vertices[i].co = self.way.nodes[i].co.copy()-self.way.object.location
+                mesh.edges[i].vertices = [i,(i+1) % num]
 
-        priority = 0
-        
-        for name in self.tags:
-            tag = self.tags[name]
-            tag_config = self.osm.getTagConfig(tag.name,tag.value)
-            if tag_config:
-                for material in tag_config.materials:
-                    mat_tag = tag_config.getTagInList(material.osm.tags)
-                    tag_priority = mat_tag.priority
+            # fill
+            veclist = []
+            for i in range(0,num):
+                veclist.append(mesh.vertices[i].co)
 
-                    if tag_priority>=priority:
-                        if building and material.osm.base_type == 'building':
-                            if material.osm.building_part=='facade':
-                                mat = material
-                            elif material.osm.building_part in ('flat_roof','sloped_roof'):
-                                roof_mat = material
-                        if road and material.osm.base_type == 'road':
-                            # prefer materials with matching lanes
-                            if mat==None or mat.osm.lanes!=self.lanes:
-                                mat = material
-                        if area and material.osm.base_type == 'area':
-                            mat = material
+            fill_vecs = geometry.tesselate_polygon([veclist])
 
-                        priority = tag_priority
-                        
-        self.object.material_slots[0].material = mat
-        if building:
-            self.object.material_slots[1].material = roof_mat
+            # add new edges and faces
+            mesh.faces.add(len(fill_vecs))
+            mesh.edges.add(len(fill_vecs)*3)
+            for i in range(0,len(fill_vecs)):
+                v1 = fill_vecs[i][0]
+                v2 = fill_vecs[i][1]
+                v3 = fill_vecs[i][2]
+                mesh.faces[i].vertices = [v3,v2,v1]
+                mesh.faces[i].use_smooth = True
+                mesh.edges[i].vertices = [v1,v2]
+                mesh.edges[i+1].vertices = [v2,v3]
+                if len(mesh.edges)>=i+2:
+                    mesh.edges[i+2].vertices = [v3,v1]
 
-    def setOffset(self,offset):
-        if self.object:
-            self.offset = offset
-            self.object.location[2] = offset
+            mesh.validate()
+
+            # create uvs
+            uv_texture = mesh.uv_textures.new()
+        else:
+            uv_texture = mesh.uv_textures[0]
+
+        for i in range(0,len(mesh.faces)):
+            uv_face = uv_texture.data[i]
+            mesh_face = mesh.faces[i]
+            v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()
+            v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()
+            if len(mesh_face.vertices)>=3:
+                v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()
+            else:
+                v3 = (0.0,0.0)
+            if len(mesh_face.vertices)==4:
+                v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()
+            else:
+                v4 = (0.0,0.0)
+
+            uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
+
+
+class Barrier(Geometry):
+    height = None
+    width = 0.0
+
+    def __init__(self,way):
+        super(Barrier,self).__init__(way)
+        self.height = None
+        self.width = 0.0
+
+    def create(self,rebuild):
+        super(Barrier,self).create(rebuild)
+
+        material = self.way.getMaterial()
+
+        self.width = material.osm.barrier_width
 
 
 class Node():
@@ -1047,6 +1091,7 @@ class Node():
     object = None
     name = None
     level = 0
+    ways = []
 
     def __init__(self,xml,osm):
         self.osm = osm
@@ -1056,6 +1101,7 @@ class Node():
         self.object = None
         self.name = None
         self.level = 0
+        self.ways = []
 
         if 'ele' in xml.attributes:
             self.ele = float(xml.attributes['ele'].value)
@@ -1063,8 +1109,6 @@ class Node():
         self.co = self.osm.getCoordinates((self.lat,self.lon,self.ele))
         self.tags = self.osm.getTags(xml)
         self.setLevel()
-        self.setType()
-        self.setName()
 
     def setLevel(self):
         if 'level' in self.tags:
@@ -1073,40 +1117,22 @@ class Node():
             except:
                 self.level = -1
 
-    def setType(self):
-        self.type = [None,None,None]
-        if ROAD_TAG in self.tags:
-            self.type[0] = 'object'
-            self.type[1] = self.tags[ROAD_TAG].value
-
-        if AEROWAY_TAG in self.tags:
-            self.type[0] = 'object'
-            self.type[1] = AEROWAY_TAG
-            self.type[2] = self.tags[AEROWAY_TAG].value
-
-        if RAILWAY_TAG in self.tags:
-            self.type[0] = 'object'
-            self.type[1] = RAILWAY_TAG
-            self.type[2] = self.tags[RAILWAY_TAG].value
-
-        for name in USAGE_TAGS:
-            if name in self.tags:
-                self.type[0] = 'object'
-                self.type[1] = name
-                self.type[2] = self.tags[name].value
-
     def setName(self):
-        if self.type[0] and self.type[1]:
-            self.name = self.type[1]+'_'+self.id
+        if self.type:
+            if 'name' in self.tags:
+                self.name = self.tags['name'].value
+            else:
+                self.name = self.type+'_'+self.id
 
-    def generate(self,rebuild):
-         if self.level>=0 and self.type[0]:
-            self.createObject(rebuild)
-#            selectObject(self.object,self.osm.scene)
-            self.create(rebuild)
-#            deselectObject(self.object)
+    def generate(self,rebuild, object = None):
+         if len(self.tags)>0 and self.level>=0:
+            self.type = 'object'
+            self.setName()
+            self.createObject(rebuild,object)
+            if self.object:
+                self.create(rebuild)
 
-    def createObject(self,rebuild):
+    def createObject(self,rebuild, object):
         if rebuild==False:
             self.object = bpy.data.objects.new(self.name,None)
             self.object.osm.id = self.id
@@ -1117,29 +1143,25 @@ class Node():
                 obj_tag.value = self.tags[tag].value
                 
             self.osm.scene.objects.link(self.object)
-        else:
-            for object in self.osm.scene.objects:
-                if object.osm.id == self.id:
-                    self.object = object
-                    return
+        elif object:
+            self.object = object
         
     def create(self,rebuild):
         self.object.location = self.co
         group = None
         priority = 0
+        
+        for name in self.tags:
+            tag = self.tags[name]
+            tag_config = self.osm.getTagConfig(tag.name,tag.value)
+            if tag_config:
+                for tag_group in tag_config.groups:
+                    group_tag = tag_config.getTagInList(tag_group.osm.tags)
+                    tag_priority = group_tag.priority
 
-        if self.type[0]=='object':
-            for name in self.tags:
-                tag = self.tags[name]
-                tag_config = self.osm.getTagConfig(tag.name,tag.value)
-                if tag_config:
-                    for tag_group in tag_config.groups:
-                        group_tag = tag_config.getTagInList(tag_group.osm.tags)
-                        tag_priority = group_tag.priority
-
-                        if tag_priority>=priority:
-                            group = tag_group
-                            priority = tag_priority
+                    if tag_priority>=priority:
+                        group = tag_group
+                        priority = tag_priority
 
         if group:
             self.object.dupli_type = 'GROUP'
