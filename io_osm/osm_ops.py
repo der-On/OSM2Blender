@@ -59,7 +59,9 @@ class SCENE_OT_rebuild_osm(bpy.types.Operator):
     def execute(self,context):
         from os import path
         from io_osm.import_osm import rebuild_osm
-        
+
+        filepath = context.scene.osm.file
+
         if filepath!='' and path.exists(filepath):
             rebuild_osm(filepath,context)
         return {'FINISHED'}

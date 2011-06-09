@@ -24,7 +24,7 @@ POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
 class OSM():
     xml = None
     nodes = {}
-    ways = {'area':[],'building':[],'road':[],'barrier':[],'by_id':{},'sorted':[]}
+    ways = {'area':[],'building':[],'trafficway':[],'barrier':[],'by_id':{},'sorted':[]}
     relations = {}
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     dimensions = Vector((0.0,0.0))
@@ -47,7 +47,7 @@ class OSM():
 
     def __init__(self,xml):
         self.nodes = {}
-        self.ways = {'area':[],'building':[],'road':[],'barrier':[],'by_id':{},'sorted':[]}
+        self.ways = {'area':[],'building':[],'trafficway':[],'barrier':[],'by_id':{},'sorted':[]}
         self.relations = {}
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.dimensions = Vector((0.0,0.0))
@@ -143,16 +143,19 @@ class OSM():
         #self.createGround()
         #self.createCamera()
 
-        self.process_step = 100/len(self.ways['by_id'])
+        if rebuild:
+            self.process_step = 100/len(self.scene.objects)
+            self.createFromExisting()
+        else:
+            self.process_step = 100/(len(self.ways['by_id'])+len(self.nodes))
+            # generate all node objects
+            self.createObjects(rebuild)
 
-        # generate all node objects
-        self.createObjects(rebuild)
-
-        # generate all ways
-        self.createWays(rebuild)
+            # generate all ways
+            self.createWays(rebuild)
 
         self.sortAreas()
-        self.sortRoads()
+        self.sortTrafficways()
 
         # set to layers
         if rebuild==False:
@@ -172,6 +175,20 @@ class OSM():
             if debug:
                 debugger.debug('OSM rebuild complete!')
 
+    def createFromExisting(self):
+        for object in self.scene.objects:
+            if object.osm.id!='':
+                # check if it is an object
+                if object.osm.id in self.nodes:
+                    self.nodes[object.osm.id].generate(True,object)
+                    if debug:
+                        debugger.debug('%3.2f' % (self.process) +'% ' + self.nodes[object.osm.id].name)
+                elif object.osm.id in self.ways['by_id']:
+                    self.ways['by_id'][object.osm.id].generate(True,object)
+                    if debug:
+                        debugger.debug('%3.2f' % (self.process) +'% ' + self.ways['by_id'][object.osm.id].name)
+            self.process+=self.process_step
+
     def setToLayer(self,items,layer,dict = False):
         layers = self.getLayers()
         layers[layer] = True
@@ -186,31 +203,28 @@ class OSM():
         return [False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False]
 
     def createWays(self,rebuild):
+        if debug:
+            debugger.debug('\nCreating ways ...')
         for id in self.ways['by_id']:
             way = self.ways['by_id'][id]
             way.generate(rebuild)
-#            if way.object:
-#                self.setLayer(way)
-                # move to temp_scene for faster generation of next ways
-#                self.scene.objects.unlink(way.object)
-#                self.temp_scene.objects.link(way.object)
+            if debug and way.object:
+                debugger.debug('%3.2f' % (self.process) +'% ' + way.name)
             self.process+=self.process_step
 
     def createObjects(self,rebuild):
         if debug:
-            debugger.debug('Creating objects ...')
+            debugger.debug('\nCreating objects ...')
         for id in self.nodes:
             node = self.nodes[id]
             node.generate(rebuild)
-#            if node.object:
-#                self.setLayer(node)
-                # move to temp_scene for faster generation of next ways
-#                self.scene.objects.unlink(node.object)
-#                self.temp_scene.objects.link(node.object)
+            if debug and node.object:
+                debugger.debug('%3.2f' % (self.process) +'% ' + node.name)
+            self.process+=self.process_step
 
     def sortAreas(self):
         if debug:
-            debugger.debug('Z-sorting areas ...' )
+            debugger.debug('\nZ-sorting areas ...' )
 
         way_offset = 0.0
         max_offset = self.offset
@@ -222,22 +236,22 @@ class OSM():
 
         self.offset = max_offset
 
-    def sortRoads(self):
+    def sortTrafficways(self):
         if debug:
-            debugger.debug('Z-sorting roads ...' )
+            debugger.debug('\nZ-sorting trafficways ...' )
 
         max_offset = self.offset+self.offset_step
-        for way in self.ways['road']:
+        for way in self.ways['trafficway']:
             if way.object:
-                way.setOffset(self.getRoadOffset(way))
+                way.setOffset(self.getTrafficwayOffset(way))
 
         self.offset = max_offset
 
-    def getRoadOffset(self,way):
+    def getTrafficwayOffset(self,way):
         colliding = self.getCollidingWays(way,'area','offset')
         if len(colliding)>0:
             offset = colliding[0].offset
-            sort_index = way.object.material_slots[0].material.road_sort
+            sort_index = way.materials[0].osm.trafficway_sort
             return offset+(self.offset_step*(sort_index+1))
         return 0.0
 
@@ -323,7 +337,7 @@ class OSM():
 
         areas = []
         buildings = []
-        roads = []
+        trafficways = []
         barriers = []
         by_id = {}
 
@@ -335,12 +349,12 @@ class OSM():
                 areas.append(way)
             elif way.type=='building':
                 buildings.append(way)
-            elif way.type=='road':
-                roads.append(way)
+            elif way.type=='trafficway':
+                trafficways.append(way)
             elif way.type=='barrier':
                 barriers.append(way)
 
-        return {'area':areas,'building':buildings,'road':roads,'barrier':barriers,'by_id':by_id,'sorted':[]}
+        return {'area':areas,'building':buildings,'trafficway':trafficways,'barrier':barriers,'by_id':by_id,'sorted':[]}
 
     def getNodeRefs(self,way,xml):
         refs = []
@@ -419,7 +433,7 @@ class OSM():
 
         if type in self.ways:
             for c_way in self.ways[type]:
-                if c_way.object and c_way!=way:
+                if c_way.object and hasattr(c_way.object,'data') and len(c_way.object.data.materials)>0 and c_way!=way:
                     if self.waysCollide(way,c_way):
                         colliding.append(c_way)
 
@@ -548,6 +562,7 @@ class Way():
         self.setType()
         self.setLevel()
         self.setName()
+        self.createGeometry()
 
     def setLevel(self):
         if 'level' in self.tags:
@@ -564,24 +579,20 @@ class Way():
 
     def generate(self,rebuild, object = None):
         if self.type and self.level>=0:
-            if debug:
-                debugger.debug('%3.2f' % (self.osm.process) +'% ' + self.name)
             self.createObject(rebuild,object)
             if self.object:
                 if self.type:
-                    self.createGeometry(rebuild)
+                    if self.geometry:
+                        self.geometry.generate(rebuild)
                     self.area = self.geometry.getArea()
                     
-                self.bounds[0][0] = self.object.location[0]-(self.object.dimensions[0]/2)
-                self.bounds[1][0] = self.object.location[0]+(self.object.dimensions[0]/2)
-                self.bounds[0][1] = self.object.location[1]-(self.object.dimensions[1]/2)
-                self.bounds[1][1] = self.object.location[1]+(self.object.dimensions[1]/2)
+                self.bounds = self.geometry.getBounds()
 
                 # align objects along center edge
                 self.alignObjects()
 
     # TODO: check if a group with the osm-property "name" with same name as the way exists and use that instead of generic mesh
-    def createGeometry(self,rebuild):
+    def createGeometry(self):
         # TODO: look for USAGE_TAGS groups and place them on top of building, on every node for lines or in object center for areas
         # TODO: allow for scalable or repeatable groups in between nodes for lines (cables of powerlines for example)
         # TODO: allow for scatterable groups for natural area types (trees, bushes, etc.)
@@ -589,13 +600,10 @@ class Way():
             self.geometry = Building(self)
         elif self.type=='area':
             self.geometry = Area(self)
-        elif self.type in ('road'):
-            self.geometry = Road(self)
+        elif self.type=='trafficway':
+            self.geometry = Trafficway(self)
         elif self.type=='barrier':
             self.geometry = Barrier(self)
-
-        if self.geometry:
-            self.geometry.create(rebuild)
             
     def createObject(self,rebuild, object = None):
         if rebuild==False:
@@ -626,28 +634,18 @@ class Way():
         for i in range(0,len(self.nodes)):
             # check for referenced objects and align them with center edge on xy plane, means rotate on z-axis only
             if self.nodes[i].object:
-                if i>0:
-                    start_v = self.nodes[i-1].co
-                else:
-                    start_v = self.nodes[i].co
-
-                if i<len(self.nodes)-1:
-                    end_v = self.nodes[i+1].co
-                else:
-                    end_v = self.nodes[i].co
-
-                normal = (start_v-end_v).normalized().cross(upvector)
+                normal = self.geometry.normals[i]
                 rot = normal.to_track_quat('X','Z').to_euler()
                 self.nodes[i].object.rotation_euler = rot
 
-                # offset the object to the side so it next to a road
-                if hasattr(self.geometry,'width') and self.geometry.width>0:
+                # offset the object to the side so it's next to a road
+                if self.type=='trafficway' and self.geometry.width>0:
                     offset = normal*(self.geometry.width/2)
                     if self.osm.right_hand_traffic:
-                        self.nodes[i].object.location-=offset
+                        self.nodes[i].object.location = self.nodes[i].co-offset
                     else:
-                        self.nodes[i].object.location-=offset
-    
+                        self.nodes[i].object.location = self.nodes[i].co+offset
+
     def setMaterials(self):
         mat = None
         roof_mat = None
@@ -668,21 +666,30 @@ class Way():
                     tag_priority = mat_tag.priority
 
                     if tag_priority>=priority:
-                        if material.osm.base_type == 'building':
-                            if material.osm.building_part=='facade':
-                                mat = material
-                            elif material.osm.building_part in ('flat_roof','sloped_roof'):
-                                roof_mat = material
-                            elif material.osm.building_part=='basement':
-                                basement_mat = material
-                        if material.osm.base_type == 'road':
-                            # prefer materials with matching lanes
-                            if mat==None or mat.osm.lanes!=lanes:
-                                mat = material
-                        if material.osm.base_type == 'area':
-                            mat = material
+                        # check if we have mandatory tags
+                        mandatory = getMandatoryTags(material)
+                        found = 0
+                        for i in range(0,len(mandatory)):
+                            if mandatory[i].name in self.tags:
+                                if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
+                                    found+=1
 
-                        priority = tag_priority
+                        if found==len(mandatory):
+                            if material.osm.base_type == 'building':
+                                if material.osm.building_part=='facade':
+                                    mat = material
+                                elif material.osm.building_part in ('flat_roof','sloped_roof'):
+                                    roof_mat = material
+                                elif material.osm.building_part=='basement':
+                                    basement_mat = material
+                            if material.osm.base_type == 'trafficway':
+                                # prefer materials with matching lanes
+                                if mat==None or mat.osm.lanes!=lanes:
+                                    mat = material
+                            if material.osm.base_type == 'area':
+                                mat = material
+
+                            priority = tag_priority
                         
         if mat:
             self.materials.append(mat)
@@ -737,11 +744,18 @@ class Way():
 
 class Geometry():
     way = None
+    normals = []
 
     def __init__(self,way):
         self.way = way
+        self.normals = []
+        self.setNormals()
 
-    def create(self,rebuild):
+    def setNormals(self):
+        for i in range(0,len(self.way.nodes)):
+            self.normals.append(self.getNodeNormal(i))
+
+    def generate(self,rebuild):
         if rebuild==False:
             mesh = self.way.object.data
 
@@ -759,7 +773,73 @@ class Geometry():
         for face in self.way.object.data.faces:
             area+=face.area
         return area
+
+    def getBounds(self):
+        x_max = 0.0
+        y_max = 0.0
+        x_min = 0.0
+        y_min = 0.0
+
+        for v in self.way.object.data.vertices:
+            if v.co[0]<x_min: x_min = v.co[0]
+            if v.co[0]>x_max: x_max = v.co[0]
+            if v.co[1]<y_min: y_min = v.co[1]
+            if v.co[1]>y_max: y_max = v.co[1]
+
+        x_min-=self.way.object.location[0]/2
+        x_max-=self.way.object.location[0]/2
+        y_min-=self.way.object.location[1]/2
+        y_max-=self.way.object.location[1]/2
         
+        return ((x_min,y_min),(x_max,y_max))
+
+    # TODO: use and save this in the node?
+    def getNodeNormal(self,i):
+        upvector = Vector((0.0,0.0,1.0))
+        num = len(self.way.nodes)
+
+        if i>0:
+            start_v = self.way.nodes[i-1].co
+        else:
+            start_v = self.way.nodes[i].co
+
+        if i<num-1:
+            end_v = self.way.nodes[i+1].co
+        else:
+            end_v = self.way.nodes[i].co
+
+        return (start_v-end_v).normalized().cross(upvector)
+
+    def getSharedNodeNeighbours(self,node):
+        shared = []
+        for way in node.ways:
+            shared.append(self.getSharedNodeNeighbour(node,way))
+        return shared
+
+    def getSharedNodeNeighbour(self,node,way):
+        from operator import indexOf
+        index = indexOf(way.nodes,node)
+        if index==0:
+            return way.nodes[index+1]
+        elif index==len(way.nodes)-1:
+            if way.isClosed():
+                return way.nodes[index-2]
+            else:
+                return way.nodes[index-1]
+        else:
+            return node
+
+    def getNodesCenter(self,nodes):
+        v_min = Vector((0.0,0.0,0.0))
+        v_max = Vector((0.0,0.0,0.0))
+
+        for node in nodes:
+            for i in range(0,3):
+                if node.co[i]<v_min[i]: v_min[i] = node.co[i]
+                if node.co[i]>v_max[i]: v_max[i] = node.co[i]
+
+        c = (v_max+v_min)/2
+        return c
 
 class Building(Geometry):
     height = None
@@ -769,19 +849,23 @@ class Building(Geometry):
         super(Building,self).__init__(way)
         self.levels = None
         self.height = None
-
-    # TODO: split this up into more methods
-    def create(self,rebuild):
-        super(Building,self).create(rebuild)
-
+        self.setHeight()
+        
+    def setHeight(self):
         material = self.way.getMaterial()
 
         if 'height' in self.way.tags:
-            self.height = self.way.osm.getMeters(self.tags['height'].value)
+            self.height = self.way.osm.getMeters(self.way.tags['height'].value)
             self.levels = self.height/material.osm.building_level_height
         else:
             self.levels = material.osm.building_default_levels
             self.height = self.levels*material.osm.building_level_height
+
+    # TODO: split this up into more methods
+    def generate(self,rebuild):
+        super(Building,self).generate(rebuild)
+
+        material = self.way.getMaterial()
 
         from mathutils import geometry
         num = len(self.way.nodes)-1 # first and last are at the same location, so we do not need the last node
@@ -851,6 +935,7 @@ class Building(Geometry):
             mesh.validate()
 
         # create uvs
+        # TODO: get z-angle of building using middle normal of all nodes and rotate roof uvs with this angle
         if rebuild:
             uv_texture = mesh.uv_textures[0]
         else:
@@ -898,26 +983,29 @@ class Building(Geometry):
             uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
 
 
-class Road(Geometry):
+class Trafficway(Geometry):
     width = 0.0
     lanes = 1
 
     def __init__(self,way):
-        super(Road,self).__init__(way)
+        super(Trafficway,self).__init__(way)
         self.lanes = 1
         self.width = 0
+        self.setWidth()
 
-    def create(self,rebuild):
-        super(Road,self).create(rebuild)
-
+    def setWidth(self):
         material = self.way.getMaterial()
 
         if 'lanes' in self.way.tags:
             self.lanes = int(self.way.tags['lanes'].value)
         self.width = material.osm.lane_width*self.lanes
 
+    def generate(self,rebuild):
+        super(Trafficway,self).generate(rebuild)
+
+        material = self.way.getMaterial()
+
         from mathutils import Euler
-        upvector = Vector((0.0,0.0,1.0))
 
         num = len(self.way.nodes)
         v_num = len(self.way.nodes)*2
@@ -929,21 +1017,48 @@ class Road(Geometry):
             mesh.faces.add(num-1)
             mesh.edges.add(num+num+num-2)
 
+#        prev_normal = None
+
         for i in range(0,num):
-            if i>0:
-                start_v = self.way.nodes[i-1].co
-            else:
-                start_v = self.way.nodes[i].co
+            width = self.width
 
-            if i<num-1:
-                end_v = self.way.nodes[i+1].co
-            else:
-                end_v = self.way.nodes[i].co
+            # If an endpoint is shared with other ways we have to align it and create width transitions
+            if i==0 or i==num-1 and len(self.way.nodes[i].ways)>1:
+                node = self.way.nodes[i]
+                node_normal = self.normals[i]
+                normal = node_normal.copy()
+                num_shared = 1
+                
+                for shared_way in self.way.nodes[i].ways:
+                    if shared_way!=self.way and shared_way.type==self.way.type: # only use shared nodes from other trafficways
+                        shared_index = node.getIndexInWay(shared_way)
 
-            normal = (start_v-end_v).normalized().cross(upvector)
-            offset = normal*(self.width/2)
+                        # found an endpoint
+                        if shared_index==0 or shared_index==len(shared_way.nodes)-1: # only use endpoints
+                            shared_normal = shared_way.geometry.normals[shared_index]
+                            # ignore hard turns
+                            angle = node_normal.angle(shared_normal)
+                            if abs(math.degrees(angle))<=80:
+                                normal+=shared_normal
+                                num_shared+=1
+                                # create a transition to the widest trafficway
+                                if width<shared_way.geometry.width:
+                                    width = shared_way.geometry.width
+                        else: # some point in between, so its a junction
+                            # create transition to thiner trafficway
+                            if width>shared_way.geometry.width:
+                                width = shared_way.geometry.width
+                
+                normal = normal/num_shared
+            else:
+                normal = self.normals[i]
 
             # TODO: on 90° turns or more we have to switch normal direction, maybe keep last normal and check if we switched from <0 to >0?
+
+            # be sure to make the z-axis of the normal 0
+            normal[2] = 0
+
+            offset = normal*(width/2)
 
             # position vertices
             ii = i*2
@@ -965,6 +1080,8 @@ class Road(Geometry):
                     mesh.faces[i].vertices_raw = [ii,ii+1,ii+3,ii+2]
                     mesh.faces[i].use_smooth = True
 
+#            prev_normal = normal
+
         if rebuild==False:
             mesh.validate()
 
@@ -976,7 +1093,7 @@ class Road(Geometry):
 
         uv_y = 0.0
 
-        if material and material.osm.base_type=='road':
+        if material and material.osm.base_type=='trafficway':
             texture_lanes = material.osm.lanes
         else:
             texture_lanes = 2
@@ -1001,8 +1118,8 @@ class Area(Geometry):
     def __init__(self,way):
         super(Area,self).__init__(way)
 
-    def create(self,rebuild):
-        super(Area,self).create(rebuild)
+    def generate(self,rebuild):
+        super(Area,self).generate(rebuild)
 
         material = self.way.getMaterial()
 
@@ -1071,12 +1188,12 @@ class Barrier(Geometry):
         self.height = None
         self.width = 0.0
 
-    def create(self,rebuild):
-        super(Barrier,self).create(rebuild)
-
+        # set width
         material = self.way.getMaterial()
-
         self.width = material.osm.barrier_width
+
+    def generate(self,rebuild):
+        super(Barrier,self).generate(rebuild)
 
 
 class Node():
@@ -1160,9 +1277,22 @@ class Node():
                     tag_priority = group_tag.priority
 
                     if tag_priority>=priority:
-                        group = tag_group
-                        priority = tag_priority
+                        # check if we have mandatory tags
+                        mandatory = getMandatoryTags(tag_group)
+                        found = 0
+                        for i in range(0,len(mandatory)):
+                            if mandatory[i].name in self.tags:
+                                if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
+                                    found+=1
+
+                        if found==len(mandatory):
+                            group = tag_group
+                            priority = tag_priority
 
         if group:
             self.object.dupli_type = 'GROUP'
             self.object.dupli_group = group
+
+    def getIndexInWay(self,way):
+        from operator import indexOf
+        return indexOf(way.nodes,self)

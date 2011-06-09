@@ -7,7 +7,7 @@ class OSM_Tag(bpy.types.PropertyGroup):
                                     description="To priorise tags with same name and value in different materials.",
                                     default=0,
                                     min=0)
-    obligatory = bpy.props.BoolProperty(name="Oblgiatory",
+    mandatory = bpy.props.BoolProperty(name="Mandatory",
                                     description="Will only be applied if the object has this tag also.",
                                     default=False)
 
@@ -34,7 +34,7 @@ class OSM_Scene(bpy.types.PropertyGroup):
 class OSM_Material(bpy.types.PropertyGroup):
     base_type = bpy.props.EnumProperty(name="Base type",
                                         default='building',
-                                        items=[('building','building','building'),('road','traffic','All kinds of traffic ways.'),('area','area','Flat area.'),('barrier','barrier','All kinds of walls, fences or other barriers.')])
+                                        items=[('building','building','building'),('trafficway','trafficway','All kinds of traffic ways.'),('area','area','Flat area.'),('barrier','barrier','All kinds of walls, fences or other barriers.')])
 
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
 
@@ -61,7 +61,7 @@ class OSM_Material(bpy.types.PropertyGroup):
                                             min=1,
                                             max=100)
 
-    road_sort = bpy.props.IntProperty(name="Z-Sorting index",
+    trafficway_sort = bpy.props.IntProperty(name="Z-Sorting index",
                                     description="Higher values will make the road be positioned below roads with lower values.",
                                     default=0,
                                     min=0,

@@ -4,7 +4,7 @@ from io_osm.helpers import Debugger
 # TODO: support levels and multilevels.
 # TODO: collision detection must be more precise, objects have to much offset.
 
-profiler = True
+profiler = False
 debug = True
 log = False
 
@@ -142,3 +142,10 @@ def deselectObject(obj):
 
 def updateScene(scene):
     scene.update()
+
+def getMandatoryTags(source):
+    mandatory = []
+    for tag in source.osm.tags:
+        if tag.mandatory:
+            mandatory.append(tag)
+    return mandatory

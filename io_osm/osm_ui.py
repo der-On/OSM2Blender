@@ -50,8 +50,6 @@ class MATERIAL_PT_OSM(bpy.types.Panel):
     def draw(self,context):
         osm = context.material.osm
         layout = self.layout
-        
-        tags_layout(layout,osm)
 
         box = layout.box()
         box.prop(osm,'base_type')
@@ -62,12 +60,14 @@ class MATERIAL_PT_OSM(bpy.types.Panel):
                 box.prop(osm,'building_level_height')
             if osm.building_part=='facade':
                 box.prop(osm,'building_default_levels')
-        elif osm.base_type=='road':
+        elif osm.base_type=='trafficway':
             box.prop(osm,'lanes')
             box.prop(osm,'lane_width')
-            box.prop(osm,'road_sort')
+            box.prop(osm,'trafficway_sort')
         elif osm.base_type=='area':
             pass
+
+        tags_layout(layout,osm)
 
 class GROUP_PT_OSM(bpy.types.Panel):
     '''OSM Group Panel'''
@@ -137,7 +137,7 @@ def tags_layout(layout,osm,group=None):
         tag_box.prop(osm.tags[i],'name')
         tag_box.prop(osm.tags[i],'value')
         tag_box.prop(osm.tags[i],'priority')
-        tag_box.prop(osm.tags[i],'obligatory')
+        tag_box.prop(osm.tags[i],'mandatory')
         if group:
             op = tag_box.operator('group.remove_osm_tag')
             op.index = i
