@@ -6,13 +6,6 @@ from mathutils import Vector
 from io_osm.import_osm import *
 
 AEROWAY_TAG = 'aeroway' # TODO: add way support
-BUILDING_TAG = 'building'
-BARRIER_TAG = 'barrier'
-USAGE_TAGS = ['amenity','shop','office','craft','emergency','tourism','historic','military']
-ROAD_TAG = 'highway'
-CYCLEWAY_TAG = 'cycleway'
-RAILWAY_TAG = 'railway'
-WATERWAY_TAG = 'waterway'
 UNIT_SCALES = {'m':1,'ft':0.305}
 LAYERS = ['building','barrier','object','area','road']
 
@@ -532,7 +525,7 @@ class TagConfig():
                 return tag
         return None        
 
-# TODO: create subclasses for roads,buildings,areas?
+
 class Way():
     id = None
     name = "Way"
@@ -591,7 +584,6 @@ class Way():
                 # align objects along center edge
                 self.alignObjects()
 
-    # TODO: check if a group with the osm-property "name" with same name as the way exists and use that instead of generic mesh
     def createGeometry(self):
         # TODO: look for USAGE_TAGS groups and place them on top of building, on every node for lines or in object center for areas
         # TODO: allow for scalable or repeatable groups in between nodes for lines (cables of powerlines for example)
@@ -755,6 +747,7 @@ class Geometry():
         for i in range(0,len(self.way.nodes)):
             self.normals.append(self.getNodeNormal(i))
 
+    # TODO: check if a group with the osm-property "name" with same name as the way exists and use that instead of generic mesh
     def generate(self,rebuild):
         if rebuild==False:
             mesh = self.way.object.data
@@ -792,54 +785,34 @@ class Geometry():
         y_max-=self.way.object.location[1]/2
         
         return ((x_min,y_min),(x_max,y_max))
-
-    # TODO: use and save this in the node?
+        
     def getNodeNormal(self,i):
         upvector = Vector((0.0,0.0,1.0))
-        num = len(self.way.nodes)
+        closed = self.way.isClosed()
+
+        if closed:
+            num = len(self.way.nodes)-1
+        else:
+            num = len(self.way.nodes)
 
         if i>0:
             start_v = self.way.nodes[i-1].co
         else:
-            start_v = self.way.nodes[i].co
-
+            if closed:
+                start_v = self.way.nodes[num-1].co
+            else:
+                start_v = self.way.nodes[i].co
+                
         if i<num-1:
             end_v = self.way.nodes[i+1].co
         else:
-            end_v = self.way.nodes[i].co
+            if closed:
+                end_v = self.way.nodes[0].co
+            else:
+                end_v = self.way.nodes[i].co
 
         return (start_v-end_v).normalized().cross(upvector)
-
-    def getSharedNodeNeighbours(self,node):
-        shared = []
-        for way in node.ways:
-            shared.append(self.getSharedNodeNeighbour(node,way))
-        return shared
-
-    def getSharedNodeNeighbour(self,node,way):
-        from operator import indexOf
-        index = indexOf(way.nodes,node)
-        if index==0:
-            return way.nodes[index+1]
-        elif index==len(way.nodes)-1:
-            if way.isClosed():
-                return way.nodes[index-2]
-            else:
-                return way.nodes[index-1]
-        else:
-            return node
-
-    def getNodesCenter(self,nodes):
-        v_min = Vector((0.0,0.0,0.0))
-        v_max = Vector((0.0,0.0,0.0))
-
-        for node in nodes:
-            for i in range(0,3):
-                if node.co[i]<v_min[i]: v_min[i] = node.co[i]
-                if node.co[i]>v_max[i]: v_max[i] = node.co[i]
-
-        c = (v_max+v_min)/2
-        return c
+    
 
 class Building(Geometry):
     height = None
@@ -860,14 +833,22 @@ class Building(Geometry):
         else:
             self.levels = material.osm.building_default_levels
             self.height = self.levels*material.osm.building_level_height
-
-    # TODO: split this up into more methods
+            
     def generate(self,rebuild):
         super(Building,self).generate(rebuild)
 
+        self.createFacade(rebuild)
+
+        roof_type = self.way.getMaterial(1).osm.building_part
+
+        if roof_type=='flat_roof':
+            self.createFlatRoof(rebuild)
+        elif roof_type=='sloped_roof':
+            self.createSlopedRoof(rebuild)
+
+    def createFacade(self,rebuild):
         material = self.way.getMaterial()
 
-        from mathutils import geometry
         num = len(self.way.nodes)-1 # first and last are at the same location, so we do not need the last node
         v_num = num*2
         mesh = self.way.object.data
@@ -910,32 +891,7 @@ class Building(Geometry):
                 mesh.faces[i].use_smooth = True
                 mesh.faces[i].material_index = 0
 
-        if rebuild==False:
-            # roof
-            veclist = []
-            for i in range(num,num*2):
-                veclist.append(mesh.vertices[i].co)
-
-            fill_vecs = geometry.tesselate_polygon([veclist])
-
-            # add new edges and faces
-            mesh.faces.add(len(fill_vecs))
-            mesh.edges.add(len(fill_vecs)*3)
-            for i in range(0,len(fill_vecs)):
-                v1 = fill_vecs[i][0]+num
-                v2 = fill_vecs[i][1]+num
-                v3 = fill_vecs[i][2]+num
-                mesh.faces[i+num].vertices = [v3,v2,v1]
-                mesh.faces[i+num].use_smooth = True
-                mesh.faces[i+num].material_index = 1 # roof material
-                mesh.edges[i+(num*3)].vertices = [v1,v2]
-                mesh.edges[i+(num*3)+1].vertices = [v2,v3]
-                mesh.edges[i+(num*3)+2].vertices = [v3,v1]
-
-            mesh.validate()
-
         # create uvs
-        # TODO: get z-angle of building using middle normal of all nodes and rotate roof uvs with this angle
         if rebuild:
             uv_texture = mesh.uv_textures[0]
         else:
@@ -967,20 +923,105 @@ class Building(Geometry):
 
             uv_x+=width
 
+    def createFlatRoof(self,rebuild):
+        material = self.way.getMaterial(1)
+        mesh = self.way.object.data
+        num = len(self.way.nodes)-1
+
+        from mathutils import geometry
+
+        if rebuild==False:
+            # roof
+            veclist = []
+            for i in range(num,num*2):
+                veclist.append(mesh.vertices[i].co)
+
+            fill_vecs = geometry.tesselate_polygon([veclist])
+
+            # add new edges and faces
+            mesh.faces.add(len(fill_vecs))
+            mesh.edges.add(len(fill_vecs)*3)
+            for i in range(0,len(fill_vecs)):
+                v1 = fill_vecs[i][0]+num
+                v2 = fill_vecs[i][1]+num
+                v3 = fill_vecs[i][2]+num
+                mesh.faces[i+num].vertices = [v3,v2,v1]
+                mesh.faces[i+num].use_smooth = True
+                mesh.faces[i+num].material_index = 1 # roof material
+                mesh.edges[i+(num*3)].vertices = [v1,v2]
+                mesh.edges[i+(num*3)+1].vertices = [v2,v3]
+                mesh.edges[i+(num*3)+2].vertices = [v3,v1]
+
+            mesh.validate()
+
         # roof uvs
+        uv_texture = mesh.uv_textures[0]
+
+        # get roof angle
+        roof_normal = Vector((0.0,0.0,0.0))
+        for i in range(0,num):
+            roof_normal+=self.normals[i]
+        roof_normal = roof_normal/num
+        rot = roof_normal.to_track_quat('X','Z').to_euler()
+
         for i in range(num,len(mesh.faces)):
             uv_face = uv_texture.data[i]
             mesh_face = mesh.faces[i]
-            
+
             v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()
             v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()
             v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()
             if len(mesh_face.vertices)==4:
                 v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()
             else:
-                v4 = (0.0,0.0)
+                v4 = Vector((0.0,0.0,0.0))
+
+            v1.rotate(rot)
+            v2.rotate(rot)
+            v3.rotate(rot)
+            v4.rotate(rot)
 
             uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
+
+    def createSlopedRoof(self,rebuild):
+        mesh = self.way.object.data
+        
+        num = len(self.way.nodes)-1
+        v_num = len(mesh.vertices)
+        e_num = len(mesh.edges)
+        f_num = len(mesh.faces)
+
+        mesh.vertices.add(num)
+        mesh.edges.add(num*2)
+        mesh.faces.add(num)
+
+        roof_height = 4.0
+        roof_slope = 0.75
+        length = roof_height/roof_slope
+
+        for i in range(0,num):
+            normal = self.normals[i].copy()
+            normal[2] = roof_slope
+            v = mesh.vertices[i+num].co.copy()
+            v+=normal*length
+            mesh.vertices[i+v_num].co = v
+            mesh.edges[e_num+i].vertices[0] = num+i
+            mesh.edges[e_num+i].vertices[1] = v_num+i
+        
+        for i in range(0,num):
+            v1 = num+i
+            v2 = num+((i+1) % num)
+            v3 = v_num+i
+            v4 = v_num+((i+1) % num)
+            mesh.edges[e_num+num+i].vertices[0] = v3
+            mesh.edges[e_num+num+i].vertices[1] = v4
+
+            mesh.faces[f_num+i].vertices_raw[0] = v1
+            mesh.faces[f_num+i].vertices_raw[1] = v2
+            mesh.faces[f_num+i].vertices_raw[2] = v4
+            mesh.faces[f_num+i].vertices_raw[3] = v3
+
+        mesh.validate()
 
 
 class Trafficway(Geometry):
