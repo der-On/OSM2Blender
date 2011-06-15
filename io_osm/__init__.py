@@ -22,14 +22,14 @@
 # Variable: bl_info
 # Contains informations for Blender to recognize and categorize the addon.
 bl_info = {
-    'name': 'Import/Export: OSM',
+    'name': 'Import OSM',
     'author': 'Ondrej Brinkel',
     'version': (3, 20),
     'blender': (2, 5, 7),
     'api': 36273,
     'location': 'File > Import/Export > OSM ',
     'description': 'Import Openstreetmap XML data',
-    'warning': 'beta', # used for warning icon and text in addons panel
+    'warning': 'Depends on addon "Inset Polygon"!', # used for warning icon and text in addons panel
     'category': 'Import-Export'}
 
 if "bpy" in locals():

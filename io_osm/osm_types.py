@@ -1,6 +1,7 @@
 import bpy
 import math
 from collections import OrderedDict
+import mathutils
 from mathutils import geometry
 from mathutils import Vector
 from io_osm.import_osm import *
@@ -759,7 +760,7 @@ class Geometry():
                     mesh.materials[i] = self.way.materials[i]
             
             edge_split = self.way.object.modifiers.new(name="edge_split",type="EDGE_SPLIT")
-            edge_split.split_angle = 40.00
+            edge_split.split_angle = math.radians(40.00)
             
     def getArea(self):
         area = 0.0
@@ -984,44 +985,112 @@ class Building(Geometry):
             uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
 
     def createSlopedRoof(self,rebuild):
-        mesh = self.way.object.data
-        
+        self.createFlatRoof(rebuild)
         num = len(self.way.nodes)-1
-        v_num = len(mesh.vertices)
-        e_num = len(mesh.edges)
-        f_num = len(mesh.faces)
 
-        mesh.vertices.add(num)
-        mesh.edges.add(num*2)
-        mesh.faces.add(num)
+        mesh = self.way.object.data
 
-        roof_height = 4.0
-        roof_slope = 0.75
-        length = roof_height/roof_slope
+        # select roof faces
+        roof_faces = []
+        for i in range(num,len(mesh.faces)):
+            roof_faces.append(mesh.faces[i])
 
+        material = self.way.getMaterial(1)
+        height = material.osm.building_levels*material.osm.building_level_height
+
+        self.do_inset(mesh, roof_faces, 100, height*10, True, True)
+
+        # roof uvs
+        uv_texture = mesh.uv_textures[0]
+
+        # get roof angle
+        roof_normal = Vector((0.0,0.0,0.0))
         for i in range(0,num):
-            normal = self.normals[i].copy()
-            normal[2] = roof_slope
-            v = mesh.vertices[i+num].co.copy()
-            v+=normal*length
-            mesh.vertices[i+v_num].co = v
-            mesh.edges[e_num+i].vertices[0] = num+i
-            mesh.edges[e_num+i].vertices[1] = v_num+i
+            roof_normal+=self.normals[i]
+        roof_normal = roof_normal/num
+        rot = roof_normal.to_track_quat('X','Z').to_euler()
         
-        for i in range(0,num):
-            v1 = num+i
-            v2 = num+((i+1) % num)
-            v3 = v_num+i
-            v4 = v_num+((i+1) % num)
-            mesh.edges[e_num+num+i].vertices[0] = v3
-            mesh.edges[e_num+num+i].vertices[1] = v4
+        for i in range(num,len(mesh.faces)):
+            uv_face = uv_texture.data[i]
+            mesh_face = mesh.faces[i]
 
-            mesh.faces[f_num+i].vertices_raw[0] = v1
-            mesh.faces[f_num+i].vertices_raw[1] = v2
-            mesh.faces[f_num+i].vertices_raw[2] = v4
-            mesh.faces[f_num+i].vertices_raw[3] = v3
+            v1 = mesh.vertices[mesh_face.vertices[0]].co.copy()
+            v2 = mesh.vertices[mesh_face.vertices[1]].co.copy()
+            v3 = mesh.vertices[mesh_face.vertices[2]].co.copy()
+            if len(mesh_face.vertices)==4:
+                v4 = mesh.vertices[mesh_face.vertices[3]].co.copy()
+            else:
+                v4 = Vector((0.0,0.0,0.0))
 
-        mesh.validate()
+            #rot = mesh_face.normal.copy().to_track_quat('Y','X').to_euler()
+
+            v1.rotate(rot)
+            v2.rotate(rot)
+            v3.rotate(rot)
+            v4.rotate(rot)
+
+            uv_face.uv_raw = (v1[0],v1[1],v2[0],v2[1],v3[0],v3[1],v4[0],v4[1])
+
+    def do_inset(self, mesh, faces, amount, height, region, as_percent):
+        from mesh_inset import geom
+        from mesh_inset import model
+        from mesh_inset import offset
+        from mesh_inset import triquad
+
+        if amount <= 0.0:
+            return
+        pitch = math.atan(height / amount)
+        selfaces = []
+        selface_indices = []
+        for face in faces:
+            selfaces.append(face)
+            selface_indices.append(face.index)
+        m = geom.Model()
+        # if add all mesh.vertices, coord indices will line up
+        # Note: not using Points.AddPoint which does dup elim
+        # because then would have to map vertices in and out
+        m.points.pos = [v.co.to_tuple() for v in mesh.vertices]
+        for f in selfaces:
+            m.faces.append(list(f.vertices))
+            m.face_data.append(f.index)
+        orig_numv = len(m.points.pos)
+        orig_numf = len(m.faces)
+        model.BevelSelectionInModel(m, amount, pitch, True, region, as_percent)
+        if len(m.faces) == orig_numf:
+            # something went wrong with Bevel - just treat as no-op
+            return
+        # blender_faces: newfaces but all 4-tuples and no 0
+        # in 4th position if a 4-sided poly
+        blender_faces = []
+        blender_old_face_index = []
+        for i in range(orig_numf, len(m.faces)):
+            f = m.faces[i]
+            if len(f) == 3:
+                blender_faces.append(list(f) + [0])
+                blender_old_face_index.append(m.face_data[i])
+            elif len(f) == 4:
+                if f[3] == 0:
+                    blender_faces.append([f[3], f[0], f[1], f[2]])
+                else:
+                    blender_faces.append(f)
+                blender_old_face_index.append(m.face_data[i])
+        num_new_vertices = len(m.points.pos) - orig_numv
+        mesh.vertices.add(num_new_vertices)
+        for i in range(orig_numv, len(m.points.pos)):
+            mesh.vertices[i].co = mathutils.Vector(m.points.pos[i])
+        start_faces = len(mesh.faces)
+        mesh.faces.add(len(blender_faces))
+        for i, newf in enumerate(blender_faces):
+            mesh.faces[start_faces + i].vertices_raw = newf
+            # copy face attributes from old face that it was derived from
+            bfi = blender_old_face_index[i]
+            if bfi and 0 <= bfi < start_faces:
+                bfacenew = mesh.faces[start_faces + i]
+                bface = mesh.faces[bfi]
+                bfacenew.material_index = bface.material_index
+                bfacenew.use_smooth = bface.use_smooth
+        mesh.update(calc_edges=True)
+        #TODO: remove original faces
 
 
 class Trafficway(Geometry):
