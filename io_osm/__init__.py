@@ -60,11 +60,18 @@ class ImportOSM(bpy.types.Operator, ImportHelper):
     bl_idname = "import_osm.xml"
     bl_label = "Import OSM XML"
 
+    filepath = bpy.props.StringProperty(name="File Path", default= "")
     filename_ext = ".osm"
     filter_glob = bpy.props.StringProperty(default="*.osm", options={'HIDDEN'})
+    create_tag_list = bpy.props.BoolProperty(name="Create Tag list",description="Creates an internal tags.txt containing listing all tags found in the OSM-xml.",default=False)
 
     def execute(self, context):
-        return import_osm.load(self, context, ** self.as_keywords(ignore=("filter_glob",)))
+        return import_osm.load(self, context, self.properties.filepath)
+
+    def draw(self,context):
+        layout = self.layout
+        row = layout.row()
+        row.prop(self,'create_tag_list')
 	
 
 # Function: menu_func
