@@ -1146,13 +1146,17 @@ class Trafficway(Geometry):
         for i in range(0,len(uv_texture.data)):
             uv_face = uv_texture.data[i]
             mesh_face = mesh.faces[i]
-            # calculate height of uv face using face area and road width
-            height = hf*(mesh_face.area/self.width)
+            
+            face_length = self.getNodeDistance(self.way.nodes[i],self.way.nodes[i+1])
+            height = hf*face_length
 
             # set uvs
-            uv_face.uv_raw = (0.0,uv_y+height,width,uv_y+height,width,uv_y,0.0,uv_y)
+            uv_face.uv_raw = (0.0,uv_y,width,uv_y,width,uv_y+height,0.0,uv_y+height)
 
             uv_y+=height
+
+    def getNodeDistance(self,node_a,node_b):
+        return (node_a.co-node_b.co).magnitude
 
 
 class Area(Geometry):
