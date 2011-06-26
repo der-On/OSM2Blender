@@ -648,8 +648,13 @@ class Way():
         if 'lanes' in self.tags:
             lanes = int(self.tags['lanes'].value)
 
-        priority = 0
-        
+        priority = -1            
+
+        name = self.name+'_'+self.id
+        if 'name' in self.tags:
+            name = self.tags['name'].value
+        print('\n%s: setting Materials...' % name)
+
         for name in self.tags:
             tag = self.tags[name]
             tag_config = self.osm.getTagConfig(tag.name,tag.value)
@@ -657,6 +662,8 @@ class Way():
                 for material in tag_config.materials:
                     mat_tag = tag_config.getTagInList(material.osm.tags)
                     tag_priority = mat_tag.priority
+
+                    print('Tag: %s - Prio: %d' %(mat_tag.name,tag_priority))
 
                     if tag_priority>=priority:
                         # check if we have mandatory tags
@@ -667,8 +674,15 @@ class Way():
                                 if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
                                     found+=1
 
-                        if found==len(mandatory):
+                        if len(mandatory)>0:
+                            print('Material %s: has mandatory tags' % material.name)
+                            if found==len(mandatory):
+                                print('all mandatory tags present')
+
+                        if len(mandatory)==0 or found==len(mandatory):
+                            print('Material type: %s' % material.osm.base_type)
                             if material.osm.base_type == 'building':
+                                print('Building part: %s' % material.osm.building_part)
                                 if material.osm.building_part=='facade':
                                     mat = material
                                 elif material.osm.building_part in ('flat_roof','sloped_roof'):
@@ -702,6 +716,10 @@ class Way():
 
         if len(self.materials)>0:
             self.type = self.materials[0].osm.base_type
+            if self.type in ('building','area') and self.isClosed()==False:
+                self.type = 'trafficway'
+            if self.type in ('trafficway') and self.isClosed():
+                self.type = 'area'
     
     def setOffset(self,offset):
         if self.object:
@@ -840,12 +858,15 @@ class Building(Geometry):
 
         self.createFacade(rebuild)
 
-        roof_type = self.way.getMaterial(1).osm.building_part
+        roof_mat = self.way.getMaterial(1)
+        
+        if roof_mat:
+            roof_type = roof_mat.osm.building_part
 
-        if roof_type=='flat_roof':
-            self.createFlatRoof(rebuild)
-        elif roof_type=='sloped_roof':
-            self.createSlopedRoof(rebuild)
+            if roof_type=='flat_roof':
+                self.createFlatRoof(rebuild)
+            elif roof_type=='sloped_roof':
+                self.createSlopedRoof(rebuild)
 
     def createFacade(self,rebuild):
         material = self.way.getMaterial()
