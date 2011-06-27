@@ -116,11 +116,12 @@ class OSM():
     def getTagConfig(self,name,value):
         full_name = name+'='+value
         undefined_name = name+'='
+        config = []
         if full_name in self.config_tags:
-            return self.config_tags[full_name]
-        elif undefined_name in self.config_tags:
-            return self.config_tags[undefined_name]
-        return None
+            config.append(self.config_tags[full_name])
+        if undefined_name in self.config_tags:
+            config.append(self.config_tags[undefined_name])
+        return config
 
     def generate(self,rebuild):
         self.scene = bpy.context.scene
@@ -648,62 +649,86 @@ class Way():
         if 'lanes' in self.tags:
             lanes = int(self.tags['lanes'].value)
 
-        priority = -1            
+        priority = -1
+        roof_priority = -1
+        basement_priority = -1
 
-        name = self.name+'_'+self.id
-        if 'name' in self.tags:
-            name = self.tags['name'].value
-        print('\n%s: setting Materials...' % name)
+#        name = self.name+'_'+self.id
+#        if 'name' in self.tags:
+#            name = self.tags['name'].value
+#        print('\n%s: setting Materials...' % name)
 
         for name in self.tags:
             tag = self.tags[name]
-            tag_config = self.osm.getTagConfig(tag.name,tag.value)
-            if tag_config:
-                for material in tag_config.materials:
-                    mat_tag = tag_config.getTagInList(material.osm.tags)
-                    tag_priority = mat_tag.priority
+            tag_configs = self.osm.getTagConfig(tag.name,tag.value)
+            if len(tag_configs)>0:
+                for tag_config in tag_configs:
+                    for material in tag_config.materials:
+                        has_priority = False
+                        mat_tag = tag_config.getTagInList(material.osm.tags)
+                        tag_priority = mat_tag.priority
 
-                    print('Tag: %s - Prio: %d' %(mat_tag.name,tag_priority))
+#                        print('Tag: %s = %s - Prio: %d' %(mat_tag.name,mat_tag.value,tag_priority))
 
-                    if tag_priority>=priority:
-                        # check if we have mandatory tags
-                        mandatory = getMandatoryTags(material)
-                        found = 0
-                        for i in range(0,len(mandatory)):
-                            if mandatory[i].name in self.tags:
-                                if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
-                                    found+=1
+                        # We have to check individual building parts as they need different priorities
+                        if material.osm.base_type=='building':
+                            if material.osm.building_part=='facade':
+                                has_priority = priority<=tag_priority
+                                if has_priority:
+                                    priority = tag_priority
+                            elif material.osm.building_part in ('sloped_roof','flat_roof'):
+                                has_priority = roof_priority<=tag_priority
+                                if has_priority:
+                                    roof_priority = tag_priority
+                            elif material.osm.building_part=='basement':
+                                has_priority = basement_priority<=tag_priority
+                                if has_priority:
+                                    basement_priority = tag_priority
+                        else:
+                            has_priority = priority<=tag_priority
+                            if has_priority:
+                                    priority = tag_priority
 
-                        if len(mandatory)>0:
-                            print('Material %s: has mandatory tags' % material.name)
-                            if found==len(mandatory):
-                                print('all mandatory tags present')
+                        if has_priority:
+                            # check if we have mandatory tags
+                            mandatory = getMandatoryTags(material)
+                            found = 0
+                            for i in range(0,len(mandatory)):
+                                if mandatory[i].name in self.tags:
+                                    if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
+                                        found+=1
 
-                        if len(mandatory)==0 or found==len(mandatory):
-                            print('Material type: %s' % material.osm.base_type)
-                            if material.osm.base_type == 'building':
-                                print('Building part: %s' % material.osm.building_part)
-                                if material.osm.building_part=='facade':
+#                            if len(mandatory)>0:
+#                                print('Material %s: has mandatory tags' % material.name)
+#                                if found==len(mandatory):
+#                                    print('all mandatory tags present')
+
+                            if len(mandatory)==0 or found==len(mandatory):
+#                                print('Material type: %s' % material.osm.base_type)
+
+                                if material.osm.base_type == 'building':
+#                                    print('Building part: %s' % material.osm.building_part)
+                                    if material.osm.building_part=='facade':
+                                        mat = material
+                                    elif material.osm.building_part in ('flat_roof','sloped_roof'):
+                                        roof_mat = material
+                                    elif material.osm.building_part=='basement':
+                                        basement_mat = material
+                                if material.osm.base_type == 'trafficway':
+                                    # prefer materials with matching lanes
+                                    if mat==None or mat.osm.lanes!=lanes:
+                                        mat = material
+                                if material.osm.base_type == 'area':
                                     mat = material
-                                elif material.osm.building_part in ('flat_roof','sloped_roof'):
-                                    roof_mat = material
-                                elif material.osm.building_part=='basement':
-                                    basement_mat = material
-                            if material.osm.base_type == 'trafficway':
-                                # prefer materials with matching lanes
-                                if mat==None or mat.osm.lanes!=lanes:
-                                    mat = material
-                            if material.osm.base_type == 'area':
-                                mat = material
 
-                            priority = tag_priority
-                        
         if mat:
             self.materials.append(mat)
+#            print('Base material: %s' % mat.name)
         if roof_mat:
             self.materials.append(roof_mat)
+#            print('Roof material: %s' % roof_mat.name)
         if basement_mat:
-            self.materials.append(basement_mat)
+            self.materials.append(basement_mat)        
 
     def getMaterial(self,index = 0):
         if index < len(self.materials):
@@ -1401,28 +1426,29 @@ class Node():
     def create(self,rebuild):
         self.object.location = self.co
         group = None
-        priority = 0
+        priority = -1
         
         for name in self.tags:
             tag = self.tags[name]
-            tag_config = self.osm.getTagConfig(tag.name,tag.value)
-            if tag_config:
-                for tag_group in tag_config.groups:
-                    group_tag = tag_config.getTagInList(tag_group.osm.tags)
-                    tag_priority = group_tag.priority
+            tag_configs = self.osm.getTagConfig(tag.name,tag.value)
+            if len(tag_configs)>0:
+                for tag_config in tag_configs:
+                    for tag_group in tag_config.groups:
+                        group_tag = tag_config.getTagInList(tag_group.osm.tags)
+                        tag_priority = group_tag.priority
 
-                    if tag_priority>=priority:
-                        # check if we have mandatory tags
-                        mandatory = getMandatoryTags(tag_group)
-                        found = 0
-                        for i in range(0,len(mandatory)):
-                            if mandatory[i].name in self.tags:
-                                if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
-                                    found+=1
+                        if tag_priority>=priority:
+                            # check if we have mandatory tags
+                            mandatory = getMandatoryTags(tag_group)
+                            found = 0
+                            for i in range(0,len(mandatory)):
+                                if mandatory[i].name in self.tags:
+                                    if mandatory[i].value=='' or self.tags[mandatory[i].name].value==mandatory[i].value:
+                                        found+=1
 
-                        if found==len(mandatory):
-                            group = tag_group
-                            priority = tag_priority
+                            if found==len(mandatory):
+                                group = tag_group
+                                priority = tag_priority
 
         if group:
             self.object.dupli_type = 'GROUP'
