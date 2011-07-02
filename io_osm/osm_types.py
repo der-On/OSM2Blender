@@ -12,7 +12,7 @@ LAYERS = ['building','barrier','object','area','road']
 
 ROADS_SORT_ORDER = [None,'cycleway','railway']
 
-EQUATOR_RADIUS = 6378137        # greatest earth radius (equator)
+EQUATOR_RADIUS = 6378137.0      # greatest earth radius (equator)
 POLE_RADIUS = 6356752.314245    # smallest earth radius (pole)
 
 class OSM():
@@ -372,19 +372,45 @@ class OSM():
 
         return tags
 
+
+    # Python implementation for mercator projection by Paulo Silva taken from: http://wiki.openstreetmap.org/wiki/Mercator
+
+    def mercX(self,lon):
+        return EQUATOR_RADIUS*math.radians(lon)
+
+    def mercY(self,lat):
+        if lat>89.5:lat=89.5
+        if lat<-89.5:lat=-89.5
+        r_major=EQUATOR_RADIUS
+        r_minor=POLE_RADIUS
+        temp=r_minor/r_major
+        eccent=math.sqrt(1-temp**2)
+        phi=math.radians(lat)
+        sinphi=math.sin(phi)
+        con=eccent*sinphi
+        com=eccent/2
+        con=((1.0-con)/(1.0+con))**com
+        ts=math.tan((math.pi/2-phi)/2)/con
+        y=0-r_major*math.log(ts)
+        return y
+
+    # Returns x/y coordinates of a given latitude, longitude and elevation using the sperical mercator projection.
     def getCoordinates(self,latLonEle,use_bounds = True):
-        from math import sqrt, cos, sin
+        from math import sqrt, cos, sin, radians
 
         if len(latLonEle)==3:
             co = Vector((0.0,0.0,0.0))
         else:
             co = Vector((0.0,0.0))
 
-        rf = POLE_RADIUS/EQUATOR_RADIUS
+#        rf = POLE_RADIUS/EQUATOR_RADIUS
+#
+#        r = (EQUATOR_RADIUS*POLE_RADIUS)/sqrt((POLE_RADIUS*cos(latLonEle[0]))**2 + (EQUATOR_RADIUS*sin(latLonEle[0]))**2)
+#        co[1] = (r/180)*latLonEle[0]*self.latlon_scale
+#        co[0] = ((r/2)/180)*latLonEle[1]*self.latlon_scale
 
-        r = (EQUATOR_RADIUS*POLE_RADIUS)/sqrt((POLE_RADIUS*cos(latLonEle[0]))**2 + (EQUATOR_RADIUS*sin(latLonEle[0]))**2)
-        co[1] = (r/180)*latLonEle[0]*self.latlon_scale
-        co[0] = ((r/2)/180)*latLonEle[1]*self.latlon_scale
+        co[0] = self.mercX(latLonEle[1])
+        co[1] = self.mercY(latLonEle[0])
 
         if len(latLonEle)==3:
             co[2] = latLonEle[2]
