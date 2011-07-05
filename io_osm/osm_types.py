@@ -161,6 +161,8 @@ class OSM():
                     elif LAYERS[i] in self.ways:
                         self.setToLayer(self.ways[LAYERS[i]],i)
 
+            self.linkObjects(self.nodes)
+            self.linkObjects(self.ways['by_id'])
             updateScene(self.scene)
 
             if debug:
@@ -169,6 +171,10 @@ class OSM():
             updateScene(self.scene)
             if debug:
                 debugger.debug('OSM rebuild complete!')
+
+    def linkObjects(self,dict):
+        for id in dict:
+            if (dict[id].object): self.scene.objects.link(dict[id].object)
 
     def createFromExisting(self):
         for object in self.scene.objects:
@@ -636,7 +642,7 @@ class Way():
                 obj_tag.name = self.tags[tag].name
                 obj_tag.value = self.tags[tag].value
 
-            self.osm.scene.objects.link(self.object)
+            #self.osm.scene.objects.link(self.object)
             self.object.location = self.getCenter()
         elif object:
             self.object = object
@@ -1445,7 +1451,7 @@ class Node():
                 obj_tag.name = self.tags[tag].name
                 obj_tag.value = self.tags[tag].value
                 
-            self.osm.scene.objects.link(self.object)
+            #self.osm.scene.objects.link(self.object)
         elif object:
             self.object = object
         
