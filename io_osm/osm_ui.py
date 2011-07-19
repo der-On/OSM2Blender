@@ -31,9 +31,13 @@ class SCENE_PT_OSM(bpy.types.Panel):
         row = layout.row()
         row.prop(osm,'traffic_direction')
         row = layout.row()
-        row.prop(osm,'latlon_scale')
-        row = layout.row()
         row.prop(osm,'offset_step')
+
+        row = layout.row()
+        row.label('Geo-Bounds')
+        box = layout.box()
+        box.label('Lat: min %4.4f max %4.4f' % (osm.geo_bounds_lat[0],osm.geo_bounds_lat[1]))
+        box.label('Lon: min %4.4f max %4.4f' % (osm.geo_bounds_lon[0],osm.geo_bounds_lon[1]))
 
 class MATERIAL_PT_OSM(bpy.types.Panel):
     '''OSM Material Panel'''

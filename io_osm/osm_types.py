@@ -21,6 +21,7 @@ class OSM():
     ways = {'area':[],'building':[],'trafficway':[],'barrier':[],'by_id':{},'sorted':[]}
     relations = {}
     bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
+    geo_bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
     dimensions = Vector((0.0,0.0))
     version = ''
     generator = ''
@@ -34,7 +35,6 @@ class OSM():
     config_tags = {}
 
     # config
-    latlon_scale = 3.33
     right_hand_traffic = True
     offset_step = 0.01
     file = None
@@ -44,6 +44,7 @@ class OSM():
         self.ways = {'area':[],'building':[],'trafficway':[],'barrier':[],'by_id':{},'sorted':[]}
         self.relations = {}
         self.bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
+        self.geo_bounds = (Vector((0.0,0.0)),Vector((0.0,0.0)))
         self.dimensions = Vector((0.0,0.0))
         self.version = ''
         self.generator = ''
@@ -67,11 +68,15 @@ class OSM():
         co = self.getCoordinates(latLon,False)
         self.bounds[0][0] = co[0]
         self.bounds[0][1] = co[1]
+        self.geo_bounds[0][0] = latLon[0]
+        self.geo_bounds[0][1] = latLon[1]
 
         latLon = (float(_bounds.attributes['maxlat'].value),float(_bounds.attributes['maxlon'].value))
         co = self.getCoordinates(latLon,False)
         self.bounds[1][0] = co[0]
         self.bounds[1][1] = co[1]
+        self.geo_bounds[1][0] = latLon[0]
+        self.geo_bounds[1][1] = latLon[1]
 
         self.dimensions[0] = self.bounds[1][0]-self.bounds[0][0]
         self.dimensions[1] = self.bounds[1][1]-self.bounds[0][1]
@@ -82,8 +87,7 @@ class OSM():
             self.right_hand_traffic = True
         else:
             self.right_hand_traffic = False
-
-        self.latlon_scale = osm.latlon_scale
+            
         self.offset_step = osm.offset_step
         self.file = osm.file
 
@@ -125,6 +129,12 @@ class OSM():
 
     def generate(self,rebuild):
         self.scene = bpy.context.scene
+
+        # append geobounds to scene
+        self.scene.osm.geo_bounds_lat[0] = self.geo_bounds[0][0]
+        self.scene.osm.geo_bounds_lat[1] = self.geo_bounds[1][0]
+        self.scene.osm.geo_bounds_lon[0] = self.geo_bounds[0][1]
+        self.scene.osm.geo_bounds_lon[1] = self.geo_bounds[1][1]
 
         # create temporary scene
 #        self.temp_scene = bpy.data.scenes.new("OSM_import")

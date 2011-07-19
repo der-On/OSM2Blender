@@ -17,11 +17,6 @@ class OSM_Scene(bpy.types.PropertyGroup):
                                                 default='right',
                                                 items=[('right','right hand','right hand'),('left','left hand','left hand')])
 
-    latlon_scale = bpy.props.FloatProperty(name="Unit Scale",
-                                            description="Scale to use for transforming Geo-Coordinates into Blender units",
-                                            default=3.33,
-                                            min=0.0)
-
     offset_step = bpy.props.FloatProperty(name="Z-Sorting offset",
                                             default=0.001,
                                             min=0.01,
@@ -30,6 +25,13 @@ class OSM_Scene(bpy.types.PropertyGroup):
 
     file = bpy.props.StringProperty(name="File",default='')
 
+    geo_bounds_lat = bpy.props.FloatVectorProperty(name='Bounds Latitude',
+                                                default=(0.0,0.0),
+                                                size=2)
+
+    geo_bounds_lon = bpy.props.FloatVectorProperty(name='Bounds Longtitude',
+                                                default=(0.0,0.0),
+                                                size=2)
 
 class OSM_Material(bpy.types.PropertyGroup):
     base_type = bpy.props.EnumProperty(name="Base type",
