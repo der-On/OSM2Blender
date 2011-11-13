@@ -632,14 +632,15 @@ class Way():
         # TODO: look for USAGE_TAGS groups and place them on top of building, on every node for lines or in object center for areas
         # TODO: allow for scalable or repeatable groups in between nodes for lines (cables of powerlines for example)
         # TODO: allow for scatterable groups for natural area types (trees, bushes, etc.)
-        if self.type=='building':
+        '''if self.type=='building':
             self.geometry = Building(self)
         elif self.type=='area':
             self.geometry = Area(self)
         elif self.type=='trafficway':
             self.geometry = Trafficway(self)
         elif self.type=='barrier':
-            self.geometry = Barrier(self)
+            self.geometry = Barrier(self)'''
+        self.geometry = Line(self)
             
     def createObject(self,rebuild, object = None):
         if rebuild==False:
@@ -779,7 +780,8 @@ class Way():
             return None
 
     def setType(self):
-        self.type = None
+        self.type = 'line'
+        '''self.type = None
 
         if len(self.materials)>0:
             self.type = self.materials[0].osm.base_type
@@ -787,6 +789,7 @@ class Way():
                 self.type = 'trafficway'
             if self.type in ('trafficway') and self.isClosed():
                 self.type = 'area'
+        '''
     
     def setOffset(self,offset):
         if self.object:
@@ -900,6 +903,41 @@ class Geometry():
         return (start_v-end_v).normalized().cross(upvector)
     
 
+class Line(Geometry):
+    def __init__(self,way):
+            super(Line,self).__init__(way)
+
+    def generate(self,rebuild):
+        super(Line,self).generate(rebuild)
+
+        #material = self.way.getMaterial()
+
+        # closed outlines might need direction switch
+        closed =  self.way.isClosed()
+        if closed:
+            clockwise = self.way.isClockwise()
+            if clockwise:
+                self.way.nodes.reverse()
+
+        num = len(self.way.nodes)-1 # first and last are at the same location, so we do not need the last node
+        mesh = self.way.object.data
+
+        if rebuild==False:
+            mesh.vertices.add(num)
+            mesh.edges.add(num)
+
+            for i in range(0,num):
+                mesh.vertices[i].co = self.way.nodes[i].co.copy()-self.way.object.location
+
+                if closed==False:
+                    if i<num-1:
+                        mesh.edges[i].vertices = [i,(i+1)]
+                else:
+                    mesh.edges[i].vertices = [i,(i+1) % num]
+
+            mesh.validate()
+
+
 class Building(Geometry):
     height = None
     levels = 0
@@ -946,8 +984,7 @@ class Building(Geometry):
             mesh.vertices.add(v_num)
             mesh.edges.add(num*3)
             mesh.faces.add(num)
-
-        # TODO: we have to reverse node order if direction is counter clockwise.
+        
         clockwise = self.way.isClockwise()
         if clockwise:
             self.way.nodes.reverse()
