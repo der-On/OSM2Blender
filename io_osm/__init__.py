@@ -42,6 +42,8 @@ if "bpy" in locals():
     
 else:
     import bpy
+    import math
+    import mathutils
     from . import import_osm
     from . import osm_ui
     from . import osm_types

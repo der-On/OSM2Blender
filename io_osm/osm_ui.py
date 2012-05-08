@@ -2,7 +2,7 @@ import bpy
 
 class SCENE_PT_OSM(bpy.types.Panel):
     '''OSM Panel'''
-    bl_label = "OSM"
+    bl_label = "OSM Import settings"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
@@ -14,7 +14,7 @@ class SCENE_PT_OSM(bpy.types.Panel):
 
     def draw(self,context):
         from os import path
-        osm = context.scene.osm
+        osm = context.scene.osm_settings
         layout = self.layout
         
         if osm.file!='':
@@ -39,43 +39,44 @@ class SCENE_PT_OSM(bpy.types.Panel):
         box.label('Lat: min %4.4f max %4.4f' % (osm.geo_bounds_lat[0],osm.geo_bounds_lat[1]))
         box.label('Lon: min %4.4f max %4.4f' % (osm.geo_bounds_lon[0],osm.geo_bounds_lon[1]))
 
-class MATERIAL_PT_OSM(bpy.types.Panel):
-    '''OSM Material Panel'''
-    bl_label = "OSM"
+class OBJECT_PRESET_PT_OSM(bpy.types.Panel):
+    '''OSM Preset Panel'''
+    bl_label = "OSM Preset"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
-    bl_context = "material"
+    bl_context = "object"
 
     @classmethod
     def poll(self,context):
-        if context.material:
+        if context.object:
             return True
 
     def draw(self,context):
-        osm = context.material.osm
+        osm = context.object.osm_preset
         layout = self.layout
 
         box = layout.box()
         box.prop(osm,'base_type')
-        if osm.base_type=='building':
-            box.prop(osm,'building_part')
-            if osm.building_part in ('facade','sloped_roof'):
-                box.prop(osm,'building_levels')
-                box.prop(osm,'building_level_height')
-            if osm.building_part=='facade':
-                box.prop(osm,'building_default_levels')
-        elif osm.base_type=='trafficway':
-            box.prop(osm,'lanes')
-            box.prop(osm,'lane_width')
-            box.prop(osm,'trafficway_sort')
-        elif osm.base_type=='area':
-            pass
+        if osm.base_type!='none':
+            if osm.base_type=='building':
+                box.prop(osm,'building_part')
+                if osm.building_part in ('facade','sloped_roof'):
+                    box.prop(osm,'building_levels')
+                    #box.prop(osm,'building_level_height')
+                if osm.building_part=='facade':
+                    box.prop(osm,'building_default_levels')
+            elif osm.base_type=='trafficway':
+                box.prop(osm,'lanes')
+                #box.prop(osm,'lane_width')
+                box.prop(osm,'trafficway_sort')
+            elif osm.base_type=='area':
+                pass
 
-        tags_layout(layout,osm)
+            tags_layout(layout,osm)
 
 class GROUP_PT_OSM(bpy.types.Panel):
     '''OSM Group Panel'''
-    bl_label = "OSM"
+    bl_label = "OSM Preset"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
@@ -90,7 +91,7 @@ class GROUP_PT_OSM(bpy.types.Panel):
         layout = self.layout
 
         for group in groups:
-            osm = group.osm
+            osm = group.osm_preset
             row = layout.row()
             row.label('Group: %s' % group.name)
             box = layout.box()
@@ -98,7 +99,7 @@ class GROUP_PT_OSM(bpy.types.Panel):
 
 class OBJECT_PT_OSM(bpy.types.Panel):
     '''OSM Object Panel'''
-    bl_label = "OSM"
+    bl_label = "OSM Data"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
@@ -109,12 +110,15 @@ class OBJECT_PT_OSM(bpy.types.Panel):
             return True
 
     def draw(self,context):
-        osm = context.object.osm
+        osm = context.object.osm_data
         layout = self.layout
 
         if osm.id !='':
             row = layout.row()
             row.label('ID: '+osm.id)
+        else:
+            row = layout.row()
+            row.label('no OSM data')
 
         if osm.name!='':
             row = layout.row()
@@ -134,7 +138,7 @@ def tags_layout(layout,osm,group=None):
     if group:
         op = row.operator('group.add_osm_tag').group = group
     else:
-        row.operator('material.add_osm_tag')
+        row.operator('object.add_osm_tag')
 
     for i in range(0,len(osm.tags)):
         tag_box = layout.box()
@@ -147,7 +151,7 @@ def tags_layout(layout,osm,group=None):
             op.index = i
             op.group = group
         else:
-            tag_box.operator('material.remove_osm_tag').index = i
+            tag_box.operator('object.remove_osm_tag').index = i
 
     layout.separator()
 
@@ -166,11 +170,12 @@ def object_groups(object):
 
 def register_ui():
     bpy.utils.register_class(SCENE_PT_OSM)
-    bpy.utils.register_class(MATERIAL_PT_OSM)
+    bpy.utils.register_class(OBJECT_PRESET_PT_OSM)
     bpy.utils.register_class(GROUP_PT_OSM)
     bpy.utils.register_class(OBJECT_PT_OSM)
 
 def unregister_ui():
     bpy.utils.unregister_class(SCENE_PT_OSM)
+    bpy.utils.unregister_class(OBJECT_PRESET_PT_OSM)
     bpy.utils.unregister_class(GROUP_PT_OSM)
     bpy.utils.unregister_class(OBJECT_PT_OSM)

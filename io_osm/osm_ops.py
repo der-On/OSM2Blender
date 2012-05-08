@@ -1,26 +1,26 @@
 import bpy
 
-class MATERIAL_OT_add_osm_tag(bpy.types.Operator):
+class OBJECT_OT_add_osm_tag(bpy.types.Operator):
     bl_label = 'Add tag'
-    bl_idname = 'material.add_osm_tag'
+    bl_idname = 'object.add_osm_tag'
     bl_description = 'Add an OSM tag'
 
     def execute(self,context):
-        mat = context.material
-        mat.osm.tags.add()
+        obj = context.object
+        obj.osm_preset.tags.add()
         return {'FINISHED'}
 
 
-class MATERIAL_OT_remove_osm_tag(bpy.types.Operator):
+class OBJECT_OT_remove_osm_tag(bpy.types.Operator):
     bl_label = 'Remove tag'
-    bl_idname = 'material.remove_osm_tag'
+    bl_idname = 'object.remove_osm_tag'
     bl_description = 'Remove the OSM tag'
 
     index = bpy.props.IntProperty()
 
     def execute(self,context):
-        mat = context.material
-        mat.osm.tags.remove(self.index)
+        obj = context.object
+        obj.osm_preset.tags.remove(self.index)
         return {'FINISHED'}
 
 
@@ -33,7 +33,7 @@ class GROUP_OT_add_osm_tag(bpy.types.Operator):
 
     def execute(self,context):
         group = bpy.data.groups[self.group]
-        group.osm.tags.add()
+        group.osm_preset.tags.add()
         return {'FINISHED'}
 
 
@@ -47,7 +47,7 @@ class GROUP_OT_remove_osm_tag(bpy.types.Operator):
 
     def execute(self,context):
         group = bpy.data.groups[self.group]
-        group.osm.tags.remove(self.index)
+        group.osm_preset.tags.remove(self.index)
         return {'FINISHED'}
 
 
@@ -60,7 +60,7 @@ class SCENE_OT_rebuild_osm(bpy.types.Operator):
         from os import path
         from io_osm.import_osm import rebuild_osm
 
-        filepath = context.scene.osm.file
+        filepath = context.scene.osm_settings.file
 
         if filepath!='' and path.exists(filepath):
             rebuild_osm(filepath,context)
@@ -80,16 +80,16 @@ class SCENE_OT_remove_osm(bpy.types.Operator):
 
 
 def register_ops():
-    bpy.utils.register_class(MATERIAL_OT_add_osm_tag)
-    bpy.utils.register_class(MATERIAL_OT_remove_osm_tag)
+    bpy.utils.register_class(OBJECT_OT_add_osm_tag)
+    bpy.utils.register_class(OBJECT_OT_remove_osm_tag)
     bpy.utils.register_class(GROUP_OT_add_osm_tag)
     bpy.utils.register_class(GROUP_OT_remove_osm_tag)
     bpy.utils.register_class(SCENE_OT_rebuild_osm)
     bpy.utils.register_class(SCENE_OT_remove_osm)
 
 def unregister_ops():
-    bpy.utils.unregister_class(MATERIAL_OT_add_osm_tag)
-    bpy.utils.unregister_class(MATERIAL_OT_remove_osm_tag)
+    bpy.utils.unregister_class(OBJECT_OT_add_osm_tag)
+    bpy.utils.unregister_class(OBJECT_OT_remove_osm_tag)
     bpy.utils.unregister_class(GROUP_OT_add_osm_tag)
     bpy.utils.unregister_class(GROUP_OT_remove_osm_tag)
     bpy.utils.unregister_class(SCENE_OT_rebuild_osm)

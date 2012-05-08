@@ -40,7 +40,7 @@ def load_osm(filepath, operator, context):
         osm.generate(False)
 
     # everything went fine, so store filename
-    bpy.context.scene.osm.file = filepath
+    bpy.context.scene.osm_settings.file = filepath
 
     xml.unlink()
 
@@ -178,7 +178,7 @@ def updateScene(scene):
 
 def getMandatoryTags(source):
     mandatory = []
-    for tag in source.osm.tags:
+    for tag in source.osm_preset.tags:
         if tag.mandatory:
             mandatory.append(tag)
     return mandatory
