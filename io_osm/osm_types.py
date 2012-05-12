@@ -5,6 +5,7 @@ import mathutils
 from mathutils import geometry
 from mathutils import Vector
 from io_osm.import_osm import *
+from io_osm.osm_rules import *
 
 AEROWAY_TAG = 'aeroway' # TODO: add way support
 UNIT_SCALES = {'m':1,'ft':0.305}
@@ -32,7 +33,7 @@ class OSM():
     offset = 0.0
     scene = None
     temp_scene = None
-    config_tags = {}
+    rules = None
 
     # config
     right_hand_traffic = True
@@ -53,11 +54,11 @@ class OSM():
         self.ground = None
         self.camera = None
         self.offset = 0.0
-        self.scene = None
+        self.scene = bpy.context.scene
         self.temp_scene = None
         
         self.setConfig()
-        self.setConfigTags()
+        self.setRules()
 
         self.xml = xml
         self.version = xml.attributes['version'].value
@@ -82,7 +83,7 @@ class OSM():
         self.dimensions[1] = self.bounds[1][1]-self.bounds[0][1]
         
     def setConfig(self):
-        osm = bpy.context.scene.osm_settings
+        osm = self.scene.osm_settings
         if osm.traffic_direction == 'right':
             self.right_hand_traffic = True
         else:
@@ -91,42 +92,10 @@ class OSM():
         self.offset_step = osm.offset_step
         self.file = osm.file
 
-    def setConfigTags(self):
-        for obj in bpy.data.objects:
-            if obj.osm_preset.base_type != 'none':
-                for tag in obj.osm_preset.tags:
-                    config_name = tag.name+'='+tag.value
-                    if config_name in self.config_tags:
-                        tag_config = self.config_tags[config_name]
-                    else:
-                        tag_config = TagConfig(tag.name,tag.value)
-                        self.config_tags[config_name] = tag_config
-
-                    if obj not in tag_config.presets:
-                        tag_config.presets.append(obj)
-
-        for group in bpy.data.groups:
-            for tag in group.osm.tags:
-                config_name = tag.name+'='+tag.value
-                if config_name in self.config_tags:
-                    tag_config = self.config_tags[config_name]
-                else:
-                    tag_config = TagConfig(tag.name,tag.value)
-                    self.config_tags[config_name] = tag_config
-
-                if group not in tag_config.groups:
-                    tag_config.groups.append(group)
-                    
-
-    def getTagConfig(self,name,value):
-        full_name = name+'='+value
-        undefined_name = name+'='
-        config = []
-        if full_name in self.config_tags:
-            config.append(self.config_tags[full_name])
-        if undefined_name in self.config_tags:
-            config.append(self.config_tags[undefined_name])
-        return config
+    def setRules(self):
+        osm = self.scene.osm_settings
+        if osm.rules!='' and osm.rules in bpy.data.texts:
+            self.rules = Rules.fromString(bpy.data.texts[osm.rules].as_string())
 
     def generate(self,rebuild):
         self.scene = bpy.context.scene
@@ -541,7 +510,7 @@ class Tag():
         self.name = xml.attributes['k'].value
         self.value = xml.attributes['v'].value
 
-
+"""
 class TagConfig():
     name = None
     value = None
@@ -571,7 +540,7 @@ class TagConfig():
             if tag.name==self.name and tag.value==self.value:
                 return tag
         return None        
-
+"""
 
 class Way():
     id = None
@@ -625,9 +594,11 @@ class Way():
                 if self.type:
                     if self.geometry:
                         self.geometry.generate(rebuild)
-                    self.area = self.geometry.getArea()
+                        #if self.generator:
+                        #    self.generator.generate(rebuild)
+                        self.area = self.geometry.getArea()
                     
-                self.bounds = self.geometry.getBounds()
+                        self.bounds = self.geometry.getBounds()
 
                 # align objects along center edge
                 self.alignObjects()
@@ -638,24 +609,14 @@ class Way():
         # TODO: allow for scatterable groups for natural area types (trees, bushes, etc.)
 
         self.geometry = Outline(self)
-
-        if self.type=='building':
-            self.generator = GeometryGenerator(self,self.getPreset())
-        '''elif self.type=='area':
-            self.geometry = Area(self)
-        elif self.type=='trafficway':
-            self.geometry = Trafficway(self)
-        elif self.type=='barrier':
-            self.geometry = Barrier(self)'''
-
-        if self.generator != None:
-            self.generator.generate()
-
+        self.generator = GeometryGenerator(self)
             
     def createObject(self,rebuild, object = None):
         if rebuild==False:
             mesh = bpy.data.meshes.new(self.name)
             self.object = bpy.data.objects.new(self.name,mesh)
+
+            # add imported osm data and tags to object
             osm = self.object.osm_data
             osm.id = self.id
             osm.name = self.name
@@ -725,7 +686,7 @@ class Way():
                         else:
                             tag_priority = 0
 
-#                        print('Tag: %s = %s - Prio: %d' %(mat_tag.name,mat_tag.value,tag_priority))
+                        #print('Tag: %s = %s - Prio: %d' %(obj_tag.name,obj_tag.value,tag_priority))
 
                         # We have to check individual building parts as they need different priorities
                         if obj.osm_preset.base_type=='building':
@@ -794,7 +755,7 @@ class Way():
             return None
 
     def setType(self):
-        self.type = 'line'
+        self.type = 'outline'
         '''self.type = None
 
         if len(self.materials)>0:
@@ -1558,27 +1519,30 @@ class Node():
 
 class GeometryGenerator():
 
-    def __init__(way,preset,type = [None,None,None],offset = [0.0,0.0,0.0]):
+    def __init__(self,way):
         self.way = way
-        self.type = type
-        self.preset = preset
+        self.preset = None
+        self.type = None
         self.parts = []
         self.track_axis = 'X'
         self.up_axis = 'Z'
 
-    def generate(self):
+    def generate(self,rebuild = False):
+        self.type = self.way.type
+        self.preset = self.way.getPreset()
+
         counter = 1
 
         last_co = None
         last_part = None
 
-        for point in self.way.geometry.data.vertices:
+        for point in self.way.object.data.vertices:
             if last_co == None or (last_co[0]!=point.co[0] or last_co[1]!=point.co[1] or last_co[2]!=point.co[2]):
                 # create object
-                part_copy = bpy.data.objects.new('part_%d' % counter,part.data)
+                part_copy = bpy.data.objects.new('part_%d' % counter,self.preset.data)
 
                 # parent part_copy to outline
-                part_copy.parent = self.way.geometry
+                part_copy.parent = self.way.object
 
                 # position object
                 part_copy.location[0] = point.co[0]
@@ -1609,8 +1573,6 @@ class GeometryGenerator():
         bpy.context.scene.update()
         # update part mesh so booleans work correctly
         last_part.data.update()
-
-        return parts
 
 
     def alignPart(self,part,next_part):
@@ -1695,7 +1657,7 @@ class GeometryGenerator():
             array.relative_offset_displace = [1.0,0.0,0.0]
             array.use_relative_offset = True
 
-            bool_obj = create_bool_obj(part.name+'_x_bool',part,(length*need_count)-need_length)
+            bool_obj = self.createBoolObject(part.name+'_x_bool',part,(length*need_count)-need_length)
 
             # parent bool_obj to part
             bool_obj.parent = part

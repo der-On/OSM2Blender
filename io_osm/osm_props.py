@@ -11,7 +11,6 @@ class OSM_Tag(bpy.types.PropertyGroup):
                                     description="Will only be applied if the object has this tag also.",
                                     default=False)
 
-
 class OSM_Scene(bpy.types.PropertyGroup):
     traffic_direction = bpy.props.EnumProperty(name="Traffic direction",
                                                 default='right',
@@ -25,6 +24,8 @@ class OSM_Scene(bpy.types.PropertyGroup):
 
     file = bpy.props.StringProperty(name="File",default='')
 
+    rules = bpy.props.StringProperty(name="Rules",default='',description="import rules stored in an internal text")
+
     geo_bounds_lat = bpy.props.FloatVectorProperty(name='Bounds Latitude',
                                                 default=(0.0,0.0),
                                                 size=2)
@@ -33,6 +34,7 @@ class OSM_Scene(bpy.types.PropertyGroup):
                                                 default=(0.0,0.0),
                                                 size=2)
 
+"""
 class OSM_Preset(bpy.types.PropertyGroup):
     base_type = bpy.props.EnumProperty(name="Preset type",
                                         description='If set to other then "none" this object will be used as a building preset.',
@@ -51,13 +53,7 @@ class OSM_Preset(bpy.types.PropertyGroup):
                                             default=1,
                                             min=1,
                                             max=100)
-    """
-    building_level_height = bpy.props.FloatProperty(name="Level height",
-                                            description="Height of one building/roof level.",
-                                            default=5.0,
-                                            min=0.0,
-                                            max=100.0)
-    """
+
     building_default_levels = bpy.props.IntProperty(name="Default number of levels",
                                             description="Number of building levels when no height information is present.",
                                             default=3,
@@ -75,42 +71,33 @@ class OSM_Preset(bpy.types.PropertyGroup):
                                     default=2,
                                     min=1,
                                     max=10)
-    """
-    lane_width = bpy.props.FloatProperty(name="Lane width",
-                                    description="Width of one lane.",
-                                    default=3.0,
-                                    min=0.0,
-                                    max=100.0)
-
-    barrier_width = bpy.props.FloatProperty(name="Barrier width",
-                                    description="Width of the barrier.",
-                                    default=0.0,
-                                    max=100.0)
-    """
+"""
 
 class OSM_Object(bpy.types.PropertyGroup):
     id = bpy.props.StringProperty(name="ID")
     name = bpy.props.StringProperty(name="Name")
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
 
+"""
 class OSM_Group(bpy.types.PropertyGroup):
     tags = bpy.props.CollectionProperty(name="Tags",type=OSM_Tag)
+"""
 
 def register_props():
     bpy.utils.register_class(OSM_Tag)
     bpy.utils.register_class(OSM_Scene)
-    bpy.utils.register_class(OSM_Preset)
-    bpy.utils.register_class(OSM_Group)
+    # bpy.utils.register_class(OSM_Preset)
+    # bpy.utils.register_class(OSM_Group)
     bpy.utils.register_class(OSM_Object)
 
     bpy.types.Scene.osm_settings = bpy.props.PointerProperty(name="OSM",type=OSM_Scene)
-    bpy.types.Object.osm_preset = bpy.props.PointerProperty(name="OSM",type=OSM_Preset)
-    bpy.types.Group.osm_preset = bpy.props.PointerProperty(name="OSM",type=OSM_Group)
+    # bpy.types.Object.osm_preset = bpy.props.PointerProperty(name="OSM",type=OSM_Preset)
+    # bpy.types.Group.osm_preset = bpy.props.PointerProperty(name="OSM",type=OSM_Group)
     bpy.types.Object.osm_data = bpy.props.PointerProperty(name="OSM",type=OSM_Object)
 
 def unregister_props():
     bpy.utils.unregister_class(OSM_Tag)
     bpy.utils.unregister_class(OSM_Scene)
-    bpy.utils.unregister_class(OSM_Preset)
-    bpy.utils.unregister_class(OSM_Group)
+    # bpy.utils.unregister_class(OSM_Preset)
+    # bpy.utils.unregister_class(OSM_Group)
     bpy.utils.unregister_class(OSM_Object)

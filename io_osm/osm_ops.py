@@ -1,5 +1,6 @@
 import bpy
 
+"""
 class OBJECT_OT_add_osm_tag(bpy.types.Operator):
     bl_label = 'Add tag'
     bl_idname = 'object.add_osm_tag'
@@ -49,7 +50,7 @@ class GROUP_OT_remove_osm_tag(bpy.types.Operator):
         group = bpy.data.groups[self.group]
         group.osm_preset.tags.remove(self.index)
         return {'FINISHED'}
-
+"""
 
 class SCENE_OT_rebuild_osm(bpy.types.Operator):
     bl_label = 'Rebuild'
@@ -80,17 +81,17 @@ class SCENE_OT_remove_osm(bpy.types.Operator):
 
 
 def register_ops():
-    bpy.utils.register_class(OBJECT_OT_add_osm_tag)
-    bpy.utils.register_class(OBJECT_OT_remove_osm_tag)
-    bpy.utils.register_class(GROUP_OT_add_osm_tag)
-    bpy.utils.register_class(GROUP_OT_remove_osm_tag)
+    # bpy.utils.register_class(OBJECT_OT_add_osm_tag)
+    # bpy.utils.register_class(OBJECT_OT_remove_osm_tag)
+    # bpy.utils.register_class(GROUP_OT_add_osm_tag)
+    # bpy.utils.register_class(GROUP_OT_remove_osm_tag)
     bpy.utils.register_class(SCENE_OT_rebuild_osm)
     bpy.utils.register_class(SCENE_OT_remove_osm)
 
 def unregister_ops():
-    bpy.utils.unregister_class(OBJECT_OT_add_osm_tag)
-    bpy.utils.unregister_class(OBJECT_OT_remove_osm_tag)
-    bpy.utils.unregister_class(GROUP_OT_add_osm_tag)
-    bpy.utils.unregister_class(GROUP_OT_remove_osm_tag)
+    # bpy.utils.unregister_class(OBJECT_OT_add_osm_tag)
+    # bpy.utils.unregister_class(OBJECT_OT_remove_osm_tag)
+    # bpy.utils.unregister_class(GROUP_OT_add_osm_tag)
+    # bpy.utils.unregister_class(GROUP_OT_remove_osm_tag)
     bpy.utils.unregister_class(SCENE_OT_rebuild_osm)
     bpy.utils.unregister_class(SCENE_OT_remove_osm)

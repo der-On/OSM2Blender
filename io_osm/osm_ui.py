@@ -27,7 +27,10 @@ class SCENE_PT_OSM(bpy.types.Panel):
                 row.operator('scene.rebuild_osm')
             else:
                 row.label('Warning: Cannot rebuild because OSM file has been removed!')
-                
+
+        row = layout.row()
+        row.prop(osm,'rules')
+
         row = layout.row()
         row.prop(osm,'traffic_direction')
         row = layout.row()
@@ -39,6 +42,7 @@ class SCENE_PT_OSM(bpy.types.Panel):
         box.label('Lat: min %4.4f max %4.4f' % (osm.geo_bounds_lat[0],osm.geo_bounds_lat[1]))
         box.label('Lon: min %4.4f max %4.4f' % (osm.geo_bounds_lon[0],osm.geo_bounds_lon[1]))
 
+"""
 class OBJECT_PRESET_PT_OSM(bpy.types.Panel):
     '''OSM Preset Panel'''
     bl_label = "OSM Preset"
@@ -96,6 +100,7 @@ class GROUP_PT_OSM(bpy.types.Panel):
             row.label('Group: %s' % group.name)
             box = layout.box()
             tags_layout(box,osm,group.name)
+"""
 
 class OBJECT_PT_OSM(bpy.types.Panel):
     '''OSM Object Panel'''
@@ -131,6 +136,7 @@ class OBJECT_PT_OSM(bpy.types.Panel):
             for tag in osm.tags:
                 box.label(tag.name+' = '+tag.value)
 
+"""
 def tags_layout(layout,osm,group=None):
     row = layout.row()
     row.label('Tags')
@@ -167,15 +173,16 @@ def object_groups(object):
         if object.name in group.objects:
             groups.append(group)
     return groups
+"""
 
 def register_ui():
     bpy.utils.register_class(SCENE_PT_OSM)
-    bpy.utils.register_class(OBJECT_PRESET_PT_OSM)
-    bpy.utils.register_class(GROUP_PT_OSM)
+    # bpy.utils.register_class(OBJECT_PRESET_PT_OSM)
+    # bpy.utils.register_class(GROUP_PT_OSM)
     bpy.utils.register_class(OBJECT_PT_OSM)
 
 def unregister_ui():
     bpy.utils.unregister_class(SCENE_PT_OSM)
-    bpy.utils.unregister_class(OBJECT_PRESET_PT_OSM)
-    bpy.utils.unregister_class(GROUP_PT_OSM)
+    # bpy.utils.unregister_class(OBJECT_PRESET_PT_OSM)
+    # bpy.utils.unregister_class(GROUP_PT_OSM)
     bpy.utils.unregister_class(OBJECT_PT_OSM)
