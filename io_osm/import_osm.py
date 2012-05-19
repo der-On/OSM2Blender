@@ -37,8 +37,7 @@ def load_osm(filepath, operator, context):
         import time
         # profile.runctx('osm.generate(False)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
     else:
-        pass
-        # osm.generate(False)
+        osm.generate(False)
 
     # everything went fine, so store filename
     bpy.context.scene.osm_settings.file = filepath
@@ -106,8 +105,7 @@ def rebuild_osm(filepath,context):
         import time
         # profile.runctx('osm.generate(True)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
     else:
-        pass
-        # osm.generate(True)
+        osm.generate(True)
         
     xml.unlink()
 

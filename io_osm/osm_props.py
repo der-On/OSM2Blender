@@ -3,6 +3,7 @@ import bpy
 class OSM_Tag(bpy.types.PropertyGroup):
     name = bpy.props.StringProperty(name="Name")
     value = bpy.props.StringProperty(name="Value")
+    """
     priority = bpy.props.IntProperty(name="Priority",
                                     description="To priorise tags with same name and value in different presetss.",
                                     default=0,
@@ -10,6 +11,7 @@ class OSM_Tag(bpy.types.PropertyGroup):
     mandatory = bpy.props.BoolProperty(name="Mandatory",
                                     description="Will only be applied if the object has this tag also.",
                                     default=False)
+    """
 
 class OSM_Scene(bpy.types.PropertyGroup):
     traffic_direction = bpy.props.EnumProperty(name="Traffic direction",
