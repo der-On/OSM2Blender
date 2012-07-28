@@ -841,23 +841,25 @@ class Outline(Geometry):
 
 class Building(Geometry):
   height = None
-  levels = 0
-  default_levels = 3
+  levels = 1
+  preset_levels = 1
 
   def __init__(self,way,rule,preset):
     super(Building,self).__init__(way,rule,preset)
-    self.levels = None
+    self.levels = 1
+    self.preset_levels = 1
     self.height = None
     self.setHeight()
 
   def setHeight(self):
+    if 'building_part_levels' in self.rule.settings:
+      self.preset_levels = int(self.rule.settings['building_part_levels'].value)
+
     if 'height' in self.way.tags:
       self.height = self.way.osm.getMeters(self.way.tags['height'].value)
       self.levels = self.height/self.preset.dimensions[2]
     else:
-      self.levels = self.default_levels
-      if 'building_default_levels' in self.rule.settings:
-        self.levels = int(self.rule.settings['building_default_levels'])
+      self.levels = self.preset_levels
       self.height = self.levels*self.preset.dimensions[2]
 
   def generate(self,rebuild):
@@ -879,7 +881,23 @@ class Building(Geometry):
 
   def createFacade(self,rebuild):
     self.generator = LinearArrayGenerator(self.preset,self.way)
+
+    if 'preset_repeat_track_clip' in self.rule.settings:
+      self.generator.track_clip = bool(self.rule.settings['preset_repeat_track_clip'].value)
+
+    if 'preset_repeat_up_clip' in self.rule.settings:
+      self.generator.up_clip = bool(self.rule.settings['preset_repeat_up_clip'].value)
+
+    if self.levels > self.preset_levels:
+      self.generator.repeat_up = True
+      self.generator.repeat_up_count = math.ceil(self.levels/self.preset_levels)
+
+    if 'preset_track_axis' in self.rule.settings:
+      self.generator.track_axis = self.rule.settings['preset_track_axis'].value
+    if 'preset_up_axis' in self.rule.settings:
+      self.generator.up_axis = self.rule.settings['preset_up_axis'].value
     self.generator.generate(rebuild)
+
 
   def createFlatRoof(self,rebuild):
     pass
@@ -1378,22 +1396,41 @@ class Node():
 
 
 class GeometryGenerator():
+  way = None
+  preset = None
+  parts = []
 
   def __init__(self,preset,way):
     self.way = way
     self.preset = preset
     self.parts = []
-    self.track_axis = 'X'
-    self.up_axis = 'Z'
 
   def generate(self,rebuild = False):
     pass
 
 
 class LinearArrayGenerator(GeometryGenerator):
+  track_axis = 'X'
+  up_axis = 'Z'
+  offset = [0.0,0.0,0.0]
+  repeat_track = True
+  repeat_track_count = 0
+  repeat_track_clip = True
+  repeat_up = False
+  repeat_up_clip = False
+  repeat_up_count = 0
 
   def __init__(self,preset,way):
     super(LinearArrayGenerator,self).__init__(preset,way)
+    self.track_axis = 'X'
+    self.up_axis = 'Z'
+    self.offset = [0.0,0.0,0.0]
+    self.repeat_track = True
+    self.repeat_track_clip = True
+    self.repeat_track_count = 0
+    self.repeat_up = False
+    self.repeat_up_clip = False
+    self.repeat_up_count = 0
 
   def generate(self,rebuild = False):
     super(LinearArrayGenerator,self).generate(rebuild)
@@ -1412,9 +1449,9 @@ class LinearArrayGenerator(GeometryGenerator):
         part_copy.parent = self.way.object
 
         # position object
-        part_copy.location[0] = point.co[0]
-        part_copy.location[1] = point.co[1]
-        part_copy.location[2] = point.co[2]
+        part_copy.location[0] = point.co[0]+self.offset[0]
+        part_copy.location[1] = point.co[1]+self.offset[1]
+        part_copy.location[2] = point.co[2]+self.offset[2]
 
         # append to list
         self.parts.append(part_copy)
@@ -1425,8 +1462,14 @@ class LinearArrayGenerator(GeometryGenerator):
         if last_part!=None:
           # align last part object along z-axis
           self.alignPart(last_part,part_copy)
-          # add array modifier
-          self.repeatPart(last_part,part_copy)
+
+          # add array modifier along track axis
+          if self.repeat_track:
+            self.repeatTrackPart(last_part,part_copy)
+
+          # add array modifier on top to repat along up axis
+          if self.repeat_up:
+            self.repeatUpPart(last_part)
 
         # increase counter and store last position and object
         counter+=1
@@ -1436,7 +1479,12 @@ class LinearArrayGenerator(GeometryGenerator):
     # align last part to first again
     # scene needs update, otherwhise alignment will look wrong
     self.alignPart(last_part,self.parts[0])
-    self.repeatPart(last_part,self.parts[0])
+
+    if self.repeat_track:
+      self.repeatTrackPart(last_part,self.parts[0])
+    if self.repeat_up:
+      self.repeatUpPart(last_part)
+
     bpy.context.scene.update()
     # update part mesh so booleans work correctly
     last_part.data.update()
@@ -1449,26 +1497,40 @@ class LinearArrayGenerator(GeometryGenerator):
     rot = v.to_track_quat('X','Z')
     part.rotation_euler = rot.to_euler()
 
-  def createBoolObject(self,name,part,length):
+  def createBoolObject(self,name,part,length,axis = 'x'):
     add_size = 0.1
 
     # create box with dimensions matchin one part tile
-    bool_mesh = bpy.data.meshes.new(part.name+'_x_bool')
+    bool_mesh = bpy.data.meshes.new(part.name+'_'+axis+'_bool')
     bool_mesh.vertices.add(8)
     bool_mesh.edges.add(12)
     bool_mesh.polygons.add(6)
 
-    # align lower vertices (clockwise)
-    bool_mesh.vertices[0].co = [0.0,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
-    bool_mesh.vertices[1].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
-    bool_mesh.vertices[2].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,0.0-add_size]
-    bool_mesh.vertices[3].co = [0.0,(1.0*part.dimensions[1])+add_size,0.0-add_size]
+    if axis == 'x':
+      # align lower vertices (clockwise)
+      bool_mesh.vertices[0].co = [0.0,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
+      bool_mesh.vertices[1].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
+      bool_mesh.vertices[2].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,0.0-add_size]
+      bool_mesh.vertices[3].co = [0.0,(1.0*part.dimensions[1])+add_size,0.0-add_size]
 
-    # align upper vertices
-    bool_mesh.vertices[4].co = [0.0,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
-    bool_mesh.vertices[5].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
-    bool_mesh.vertices[6].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
-    bool_mesh.vertices[7].co = [0.0,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
+      # align upper vertices
+      bool_mesh.vertices[4].co = [0.0,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[5].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[6].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[7].co = [0.0,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
+    elif axis == 'y':
+      # TODO: this is the same as for x axis right now
+      # align lower vertices (clockwise)
+      bool_mesh.vertices[0].co = [0.0,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
+      bool_mesh.vertices[1].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,0.0-add_size]
+      bool_mesh.vertices[2].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,0.0-add_size]
+      bool_mesh.vertices[3].co = [0.0,(1.0*part.dimensions[1])+add_size,0.0-add_size]
+
+      # align upper vertices
+      bool_mesh.vertices[4].co = [0.0,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[5].co = [(1.0*length)+add_size,(-1.0*part.dimensions[1])-add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[6].co = [(1.0*length)+add_size,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
+      bool_mesh.vertices[7].co = [0.0,(1.0*part.dimensions[1])+add_size,(1.0*part.dimensions[2])+add_size]
 
     # create loops
     bool_mesh.loops.add(24)
@@ -1496,7 +1558,7 @@ class LinearArrayGenerator(GeometryGenerator):
     bool_mesh.validate()
     bool_mesh.update(calc_edges=True)
 
-    bool_obj = bpy.data.objects.new(part.name+'_x_bool',bool_mesh)
+    bool_obj = bpy.data.objects.new(part.name+'_'+axis+'_bool',bool_mesh)
 
     bpy.context.scene.objects.link(bool_obj)
 
@@ -1509,7 +1571,7 @@ class LinearArrayGenerator(GeometryGenerator):
     return bool_obj
 
 
-  def repeatPart(self,part,next_part):
+  def repeatTrackPart(self,part,next_part):
     v_to = mathutils.Vector(next_part.location)
     v_from = mathutils.Vector(part.location)
     v = v_to - v_from
@@ -1517,22 +1579,50 @@ class LinearArrayGenerator(GeometryGenerator):
     length = part.dimensions[0]
 
     if need_length > length:
-      need_count = math.ceil(need_length/length)
-      array = part.modifiers.new('part_x_repeat','ARRAY')
+      if self.repeat_track_count == 0:
+        need_count = math.ceil(need_length/length)
+      else:
+        need_count = self.repeat_track_count
+
+      array = part.modifiers.new('part_track_repeat','ARRAY')
       array.count = need_count
       array.fit_type = 'FIXED_COUNT'
-      array.relative_offset_displace = [1.0,0.0,0.0]
+
+      if self.track_axis == 'X':
+        array.relative_offset_displace = [1.0,0.0,0.0]
+      if self.track_axis == 'Y':
+        array.relative_offset_displace = [0.0,1.0,0.0]
+      if self.track_axis == 'Z':
+        array.relative_offset_displace = [0.0,0.0,1.0]
+
       array.use_relative_offset = True
 
-      bool_obj = self.createBoolObject(part.name+'_x_bool',part,(length*need_count)-need_length)
+      if self.repeat_track_clip:
+        bool_obj = self.createBoolObject(part.name+'_track_bool',part,(length*need_count)-need_length,'x')
 
-      # parent bool_obj to part
-      bool_obj.parent = part
+        # parent bool_obj to part
+        bool_obj.parent = part
 
-      bool_obj.location[0] = need_length
-      bool_obj.hide_render = True
-      bool_obj.hide = True
+        bool_obj.location[0] = need_length
+        bool_obj.hide_render = True
+        bool_obj.hide = True
 
-      bool = part.modifiers.new('part_x_repeat_cut','BOOLEAN')
-      bool.operation = 'UNION'
-      bool.object = bool_obj # this causes a segfault
+        bool = part.modifiers.new('part_track_repeat_cut','BOOLEAN')
+        bool.operation = 'DIFFERENCE'
+        bool.object = bool_obj
+
+  def repeatUpPart(self,part):
+    if self.repeat_up_count > 0:
+      array = part.modifiers.new('part_up_repeat','ARRAY')
+      array.count = self.repeat_up_count
+      array.fit_type = 'FIXED_COUNT'
+
+      if self.up_axis == 'X':
+        array.relative_offset_displace = [1.0,0.0,0.0]
+      if self.up_axis == 'Y':
+        array.relative_offset_displace = [0.0,1.0,0.0]
+      if self.up_axis == 'Z':
+        array.relative_offset_displace = [0.0,0.0,1.0]
+
+      array.use_relative_offset = True
+

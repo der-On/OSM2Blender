@@ -35,7 +35,7 @@ def load_osm(filepath, operator, context):
     if profiler:
         import profile
         import time
-        # profile.runctx('osm.generate(False)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
+        profile.runctx('osm.generate(False)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
     else:
         osm.generate(False)
 
@@ -59,8 +59,8 @@ def load_osm(filepath, operator, context):
                     tags[v]+=1
 
         # get tags in ways
-        for id in osm.ways['by_id']:
-            way = osm.ways['by_id'][id]
+        for id in osm.ways:
+            way = osm.ways[id]
             for tag in way.tags:
                 v = 'WAY:\t'+tag+' = '+way.tags[tag].value
                 if v not in tags:
@@ -103,7 +103,7 @@ def rebuild_osm(filepath,context):
     if profiler:
         import profile
         import time
-        # profile.runctx('osm.generate(True)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
+        profile.runctx('osm.generate(True)',{'debug':debug,'debugger':debugger,'log':log},{'osm':osm},'profile_results_'+time.strftime("%y-%m-%d-%H-%M-%S"))
     else:
         osm.generate(True)
         

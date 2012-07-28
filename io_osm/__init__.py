@@ -24,12 +24,11 @@
 bl_info = {
     'name': 'Import OSM',
     'author': 'Ondrej Brinkel',
-    'version': (3, 20),
-    'blender': (2, 5, 7),
-    'api': 36273,
-    'location': 'File > Import/Export > OSM ',
+    'version': (0, 2),
+    'blender': (2, 6, 3),
+    'location': 'File > Import',
     'description': 'Import Openstreetmap XML data',
-    'warning': 'Depends on addon "Inset Polygon"!', # used for warning icon and text in addons panel
+    'warning': 'Depends on addon "Inset Polygon"!',
     'category': 'Import-Export'}
 
 if "bpy" in locals():
